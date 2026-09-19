@@ -8,7 +8,7 @@
 | E0-T02 | Quality tooling | S | 0 | E0-T01 | done | ac0c2d6 | AC1-AC4 verified locally (`nox -s lint types tests` green, `pre-commit run --all-files` green); coverage gate + markers + hypothesis profile in place |
 | E0-T03 | CI workflows | S | 0 | E0-T02 | done | 9bd0cc0 | AC2-AC4 verified locally; AC1 (<10min) unverifiable without a GH Actions run (no remote configured) — YAML validated structurally instead |
 | E0-T04 | Docs skeleton + ADR-0001…0010, 0012, 0013 | M | 0 | E0-T01 | todo | | |
-| E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | todo | | |
+| E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | done | <PENDING> | AC1 guard verified via monkeypatch (natural repro doesn't trigger in installed JAX, see Findings); AC2-AC5 verified with real tests |
 | E1-T01 | Data contracts | M | 1 | E0-T05 | todo | | |
 | E1-T02a | Config schema (pydantic) + validation rules | M | 1 | E1-T01 | todo | | |
 | E1-T02b | YAML I/O, resolved config, migration hook, `validate-config` | M | 1 | E1-T02a | todo | | |
@@ -69,9 +69,11 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-E0-T01, E0-T02 merged to main. Next eligible tickets (all depend only on E0-T02/E0-T01, may run in any order
-this session): E0-T03 (CI workflows), E0-T04 (docs/ADRs), E0-T05 (JAX bootstrap/RNG/errors/logging). `.venv`
-exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
+E0-T01, E0-T02, E0-T03, E0-T05 done this session (E0-T05 closing out now on its own branch, based off an
+older `main` before E0-T03 merged — squash-merge reconciles this cleanly since the two tickets touch disjoint
+files). E0-T04 (docs/ADRs) in progress next. Phase 0 will be complete once E0-T04 lands; phase 1 (E1-*) is
+next. `.venv` exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean
+checkout.
 
 ## Blocked / needs owner
 
@@ -87,6 +89,28 @@ exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works f
   GitHub Actions doesn't actually report "skipped" for an unmatched self-hosted runner — the job just stays
   queued indefinitely. Low severity (no self-hosted runner exists for 0.1.0, CLAUDE.md §9: "nothing may require
   a GPU"); left as-is with a comment, flagged here rather than engineered further.
+- E0-T05: AC1 ("importing regimekit after `jax.config.update('jax_enable_x64', False)` in a fresh subprocess
+  raises `NumericalError`") does not reproduce as literally written: in the installed JAX version (0.11.2),
+  `jax.config.update("jax_enable_x64", ...)` is fully dynamic/live, so `setup()`'s own `update(True)` call
+  successfully re-enables x64 regardless of any prior `update(False)` in the same process — verified
+  empirically (`tests/unit/test_e0_t05_jax_setup.py::test_e0_t05_setup_succeeds_after_prior_x64_disable`
+  and `::test_e0_t05_import_in_fresh_subprocess_ends_with_x64_enabled`). The defensive guard itself
+  (`utils/jax_setup.py`'s post-update dtype check, which is what actually raises `NumericalError` if x64
+  ends up disabled) is verified directly by forcing the failure via monkeypatch
+  (`::test_e0_t05_setup_raises_when_x64_check_fails`). Judgment call: implemented and tested the guard's
+  real intent rather than stopping, since a viable test approach existed; flagged here per independent
+  review rather than left undocumented.
+- E0-T05: `EXIT_CODES` omits `PersistenceError`, matching the ticket's literal text and consistent with
+  CLAUDE.md §3.8 (this is an open point for E8-T02 to resolve, not E0-T05's problem to fix).
+- E0-T05: `.pre-commit-config.yaml`'s `mypy` hook was switched from the isolated `pre-commit/mirrors-mypy`
+  repo (set up in E0-T02) to a local `uv run mypy` hook. Reason: the isolated hook environment only had
+  `pydantic`/`typer` as `additional_dependencies` and lacked `jax`/`structlog`/`jaxtyping`/`beartype`, so it
+  mis-evaluated `# type: ignore` comments needed for untyped `jax.config.update` calls as "unused" —
+  inconsistent with the project's own `uv run mypy` (which correctly requires them). Running mypy against
+  the project's own uv-managed environment removes the dependency-mismatch class of bug entirely, at the
+  cost of the hook no longer being sandboxed from the dev environment (acceptable: same tradeoff
+  `noxfile.py` already makes with `venv_backend="none"`). Scope creep into E0-T02's file, logged here per
+  independent review.
 - E0-T01: this session runs on native Windows, not Linux/WSL2 as CLAUDE.md §9 assumes. `uv sync --all-groups`,
   `uv build` and the import tests were verified here; anything that is genuinely Linux/WSL2-specific (e.g. an
   actual GPU-wheel install) could not be verified and is logged under "Needs CI / network / GPU" instead of
