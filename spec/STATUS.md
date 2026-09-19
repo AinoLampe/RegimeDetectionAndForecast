@@ -9,7 +9,7 @@
 | E0-T03 | CI workflows | S | 0 | E0-T02 | done | 9bd0cc0 | AC2-AC4 verified locally; AC1 (<10min) unverifiable without a GH Actions run (no remote configured) — YAML validated structurally instead |
 | E0-T04 | Docs skeleton + ADR-0001…0010, 0012, 0013 | M | 0 | E0-T01 | done | ad483b2 | AC1-AC3 verified locally; all 12 ADRs reviewed for substance, not just structure; independent review found no issues |
 | E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | done | d53f2cc | AC1 guard verified via monkeypatch (natural repro doesn't trigger in installed JAX, see Findings); AC2-AC5 verified with real tests |
-| E1-T01 | Data contracts | M | 1 | E0-T05 | todo | | |
+| E1-T01 | Data contracts | M | 1 | E0-T05 | done | <PENDING> | AC1-AC6 verified with real tests; PreparedDataset uses a hand-written pytree registration (not register_dataclass) for `times`, see Findings; independent review caught a PrepStats hash/eq contract bug, fixed |
 | E1-T02a | Config schema (pydantic) + validation rules | M | 1 | E1-T01 | todo | | |
 | E1-T02b | YAML I/O, resolved config, migration hook, `validate-config` | M | 1 | E1-T02a | todo | | |
 | E1-T03a | Bijectors and priors | M | 1 | E0-T05 | todo | | |
@@ -69,15 +69,34 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-Phase 0 complete: E0-T01..E0-T05 all done. Phase 1 next: E1-T01 (data contracts) is the only ticket whose
-deps (E0-T05) are satisfied; E1-T03a and E1-T04 also only depend on E0-T05 and can follow in any order.
-`.venv` exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
+Phase 0 and E1-T01 done. Next eligible tickets: E1-T03a (bijectors/priors) and E1-T04 (dists), both depend
+only on E0-T05; E1-T02a (config schema) depends on E1-T01 and is also eligible now. `.venv` exists at repo
+root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
 
 ## Blocked / needs owner
 
 ## Spec fixes
 
 ## Findings for the owner
+- E1-T01: `PreparedDataset.times` (a `datetime64[ns]` numpy array) cannot be a JAX pytree leaf (unsupported
+  dtype under `jax.jit`) and cannot be plain pytree aux data either (a raw multi-element numpy array breaks
+  JAX's own aux-equality check during jit tracing — reproduced directly: `ValueError: ambiguous truth value`).
+  Resolved with a hand-written `jax.tree_util.register_pytree_node(PreparedDataset, flatten, unflatten)` pair
+  instead of the ticket's literal `register_dataclass(..., meta_fields=[...])`; `times` is wrapped in a small
+  `_HashableArray` (hash/eq via `.tobytes()`) only inside flatten/unflatten, so `dataset.times` stays a plain
+  `np.ndarray` at the public API. All five contract dataclasses also override `__eq__`/`__hash__`, since the
+  default dataclass-generated equality on array fields returns an array instead of a bool (also reproduced
+  directly) — this is exactly CLAUDE.md §5's "NumPy arrays are unhashable" gotcha, applied more broadly than
+  just to pytree registration. Independent review confirmed both deviations are correct and necessary, and
+  caught a related bug this introduced: `PrepStats.__hash__` was identity-based while its `__eq__` (needed for
+  the same reason) was value-based, violating the hash/eq contract for a class that sits in the pytree's aux
+  data — this would have caused spurious `jax.jit` recompilation for structurally-identical-but-distinct
+  `PrepStats` instances. Fixed with a content-based hash (commit eb1fb5f) and a regression test
+  (`test_e1_t01_jit_of_function_taking_prepared_dataset_works`) asserting no extra compilation.
+- E1-T01: the AST layer/profile-rule scanner (`test_e1_t01_layer_rule.py`) is import-based (matches `Import`/
+  `ImportFrom` nodes) and would not catch a violation done purely via attribute access after a bare
+  `import regimekit` (e.g. `regimekit.data.cache.foo()`); noted as a known, low-risk gap rather than fixed,
+  since no code in the repo does this and the pattern is unusual.
 - E0-T03: `.github/workflows/pr.yml`'s `docs` job runs `nox -s docs` (`mkdocs build --strict`), which needs
   `mkdocs.yml` + docs content from E0-T04 to exist; it will fail if run before E0-T04 lands. E0-T04 is planned
   later in this same session, so by session end this is resolved, but flagging since E0-T03 was implemented
