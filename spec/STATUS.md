@@ -14,7 +14,7 @@
 | E1-T02b | YAML I/O, resolved config, migration hook, `validate-config` | M | 1 | E1-T02a | todo | | |
 | E1-T03a | Bijectors and priors | M | 1 | E0-T05 | done | a8e70bd | AC1-AC4 verified with real tests; independent review caught a loosened round-trip tolerance (1e-6 vs required 1e-9), fixed |
 | E1-T03b | `ParamSpec` / `ParamManager` | M | 1 | E1-T03a | todo | | |
-| E1-T04 | Distributions (`dists`) | M | 1 | E0-T05 | todo | | |
+| E1-T04 | Distributions (`dists`) | M | 1 | E0-T05 | done | <PENDING> | AC1-AC5 verified with real tests vs scipy; independent review caught a fragile skip-heavy AC3 test, fixed to rejection-sample instead |
 | E1-T05 | Model-side contracts | S | 1 | E1-T03b | todo | | |
 | E2-T01 | Provider protocol, registry, csv adapter, contract suite | M | 2 | E1-T01 | todo | | |
 | E2-T02 | yfinance adapter | M | 2 | E2-T01 | todo | | |
@@ -69,9 +69,9 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-Phase 0, E1-T01, E1-T03a done. Next eligible tickets: E1-T04 (dists, depends only on E0-T05), E1-T02a
-(config schema, depends on E1-T01), E1-T03b (ParamSpec/ParamManager, depends on E1-T03a). `.venv` exists at
-repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
+Phase 0, E1-T01, E1-T03a, E1-T04 done. Next eligible: E1-T02a (config schema, depends on E1-T01), E1-T03b
+(ParamSpec/ParamManager, depends on E1-T03a). `.venv` exists at repo root (uv-managed, Python 3.13.13);
+`uv sync --all-groups` works from a clean checkout.
 
 ## Blocked / needs owner
 
@@ -82,6 +82,21 @@ repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clea
   (`inverse(forward(u)) == u`) used `atol=rtol=1e-6`, three orders of magnitude looser than AC1's required
   `1e-9`, with no justification (CLAUDE.md §6: never loosen a tolerance to get a suite green). Verified 1e-9
   holds for every bijector under x64 and tightened it (commit 4af0c18); no other changes were needed.
+- E1-T04: `pyproject.toml`'s pytest `addopts` gains `--import-mode=importlib`. Needed because the ticket's
+  own "Creates" list names `test_e1_t04_dists.py` identically in both `tests/unit/` and `tests/property/`,
+  which pytest's default `prepend` import mode cannot collect together (module-name collision) without
+  `__init__.py` files in every test directory; `--import-mode=importlib` is the standard fix for src-layout
+  projects and has no observed side effects on the rest of the suite.
+- E1-T04: `disc_lognormal_logpmf`'s cdf helper uses `jax.scipy.special.ndtr` instead of the textbook
+  `0.5*(1+erf(z/sqrt(2)))` — found while calibrating test parameter ranges: the erf form loses precision
+  catastrophically in the left tail (`erf(z) -> -1`), which showed up as an fake ~1e-1 mismatch against
+  scipy for realistic (not even extreme) parameter draws. `ndtr` is scipy/jax's standard numerically stable
+  normal-cdf implementation; confirmed via independent review this is a genuine stability fix, not a
+  correctness change.
+- E1-T04: independent review found the AC3 test (`test_e1_t04_negbin_pmf_mean_matches_analytic_mean`)
+  originally skipped 9/20 parametrized seeds (fixed `a` range didn't reliably land in the
+  negligible-tail-mass regime the AC requires). Fixed by rejection-sampling `a` within each seed instead of
+  skipping, so all 20 cases now exercise the assertion every run (commit a0047aa).
 - E1-T01: `PreparedDataset.times` (a `datetime64[ns]` numpy array) cannot be a JAX pytree leaf (unsupported
   dtype under `jax.jit`) and cannot be plain pytree aux data either (a raw multi-element numpy array breaks
   JAX's own aux-equality check during jit tracing — reproduced directly: `ValueError: ambiguous truth value`).

@@ -87,4 +87,4 @@ markers = [
   "benchmark: pytest-benchmark",
   "gpu: requires GPU",
 ]
-addopts = "-m 'not slow and not live and not benchmark and not gpu'"
+addopts = "-m 'not slow and not live and not benchmark and not gpu' --import-mode=importlib"
