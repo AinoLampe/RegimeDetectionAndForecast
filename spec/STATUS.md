@@ -8,7 +8,7 @@
 | E0-T02 | Quality tooling | S | 0 | E0-T01 | done | ac0c2d6 | AC1-AC4 verified locally (`nox -s lint types tests` green, `pre-commit run --all-files` green); coverage gate + markers + hypothesis profile in place |
 | E0-T03 | CI workflows | S | 0 | E0-T02 | done | 9bd0cc0 | AC2-AC4 verified locally; AC1 (<10min) unverifiable without a GH Actions run (no remote configured) — YAML validated structurally instead |
 | E0-T04 | Docs skeleton + ADR-0001…0010, 0012, 0013 | M | 0 | E0-T01 | todo | | |
-| E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | done | <PENDING> | AC1 guard verified via monkeypatch (natural repro doesn't trigger in installed JAX, see Findings); AC2-AC5 verified with real tests |
+| E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | done | d53f2cc | AC1 guard verified via monkeypatch (natural repro doesn't trigger in installed JAX, see Findings); AC2-AC5 verified with real tests |
 | E1-T01 | Data contracts | M | 1 | E0-T05 | todo | | |
 | E1-T02a | Config schema (pydantic) + validation rules | M | 1 | E1-T01 | todo | | |
 | E1-T02b | YAML I/O, resolved config, migration hook, `validate-config` | M | 1 | E1-T02a | todo | | |
