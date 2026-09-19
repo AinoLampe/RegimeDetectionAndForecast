@@ -7,7 +7,7 @@
 | E0-T01 | Repository skeleton | S | 0 | — | done | d976269 | AC1/AC2/AC4 verified locally (Windows host, uv 0.11.17, Python 3.13.13); AC3 (uv lock) resolves `jax-cuda12-plugin` universally, install skipped (Linux-only wheels, expected — see Needs CI/network/GPU) |
 | E0-T02 | Quality tooling | S | 0 | E0-T01 | done | ac0c2d6 | AC1-AC4 verified locally (`nox -s lint types tests` green, `pre-commit run --all-files` green); coverage gate + markers + hypothesis profile in place |
 | E0-T03 | CI workflows | S | 0 | E0-T02 | done | 9bd0cc0 | AC2-AC4 verified locally; AC1 (<10min) unverifiable without a GH Actions run (no remote configured) — YAML validated structurally instead |
-| E0-T04 | Docs skeleton + ADR-0001…0010, 0012, 0013 | M | 0 | E0-T01 | todo | | |
+| E0-T04 | Docs skeleton + ADR-0001…0010, 0012, 0013 | M | 0 | E0-T01 | done | <PENDING> | AC1-AC3 verified locally; all 12 ADRs reviewed for substance, not just structure; independent review found no issues |
 | E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | done | d53f2cc | AC1 guard verified via monkeypatch (natural repro doesn't trigger in installed JAX, see Findings); AC2-AC5 verified with real tests |
 | E1-T01 | Data contracts | M | 1 | E0-T05 | todo | | |
 | E1-T02a | Config schema (pydantic) + validation rules | M | 1 | E1-T01 | todo | | |
@@ -69,11 +69,9 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-E0-T01, E0-T02, E0-T03, E0-T05 done this session (E0-T05 closing out now on its own branch, based off an
-older `main` before E0-T03 merged — squash-merge reconciles this cleanly since the two tickets touch disjoint
-files). E0-T04 (docs/ADRs) in progress next. Phase 0 will be complete once E0-T04 lands; phase 1 (E1-*) is
-next. `.venv` exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean
-checkout.
+Phase 0 complete: E0-T01..E0-T05 all done. Phase 1 next: E1-T01 (data contracts) is the only ticket whose
+deps (E0-T05) are satisfied; E1-T03a and E1-T04 also only depend on E0-T05 and can follow in any order.
+`.venv` exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
 
 ## Blocked / needs owner
 
