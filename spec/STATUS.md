@@ -14,7 +14,7 @@
 | E1-T02b | YAML I/O, resolved config, migration hook, `validate-config` | M | 1 | E1-T02a | todo | | |
 | E1-T03a | Bijectors and priors | M | 1 | E0-T05 | done | a8e70bd | AC1-AC4 verified with real tests; independent review caught a loosened round-trip tolerance (1e-6 vs required 1e-9), fixed |
 | E1-T03b | `ParamSpec` / `ParamManager` | M | 1 | E1-T03a | todo | | |
-| E1-T04 | Distributions (`dists`) | M | 1 | E0-T05 | done | <PENDING> | AC1-AC5 verified with real tests vs scipy; independent review caught a fragile skip-heavy AC3 test, fixed to rejection-sample instead |
+| E1-T04 | Distributions (`dists`) | M | 1 | E0-T05 | done | c4bb1e1 | AC1-AC5 verified with real tests vs scipy; independent review caught a fragile skip-heavy AC3 test, fixed to rejection-sample instead |
 | E1-T05 | Model-side contracts | S | 1 | E1-T03b | todo | | |
 | E2-T01 | Provider protocol, registry, csv adapter, contract suite | M | 2 | E1-T01 | todo | | |
 | E2-T02 | yfinance adapter | M | 2 | E2-T01 | todo | | |
