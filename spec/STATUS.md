@@ -10,7 +10,7 @@
 | E0-T04 | Docs skeleton + ADR-0001…0010, 0012, 0013 | M | 0 | E0-T01 | done | ad483b2 | AC1-AC3 verified locally; all 12 ADRs reviewed for substance, not just structure; independent review found no issues |
 | E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | done | d53f2cc | AC1 guard verified via monkeypatch (natural repro doesn't trigger in installed JAX, see Findings); AC2-AC5 verified with real tests |
 | E1-T01 | Data contracts | M | 1 | E0-T05 | done | d0c55e0 | AC1-AC6 verified with real tests; PreparedDataset uses a hand-written pytree registration (not register_dataclass) for `times`, see Findings; independent review caught a PrepStats hash/eq contract bug, fixed |
-| E1-T02a | Config schema (pydantic) + validation rules | M | 1 | E1-T01 | todo | | |
+| E1-T02a | Config schema (pydantic) + validation rules | M | 1 | E1-T01 | done | <PENDING> | AC1-AC5 verified with real tests, Appendix A + steps-clock fixtures, ~15 cross-field rules each with a ConfigError.path test; independent review caught a dead literal-252 constant and imprecise ParamCfg error paths, both fixed |
 | E1-T02b | YAML I/O, resolved config, migration hook, `validate-config` | M | 1 | E1-T02a | todo | | |
 | E1-T03a | Bijectors and priors | M | 1 | E0-T05 | done | a8e70bd | AC1-AC4 verified with real tests; independent review caught a loosened round-trip tolerance (1e-6 vs required 1e-9), fixed |
 | E1-T03b | `ParamSpec` / `ParamManager` | M | 1 | E1-T03a | done | a99f87d | AC1-AC5 verified with real tests inc. Appendix B n_free=20; independent review caught an unguarded tied-group shape mismatch and a missing increasing+prior/bounded test, both fixed |
@@ -69,9 +69,9 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-Phase 0, E1-T01, E1-T03a, E1-T03b, E1-T04 done. Next eligible: E1-T02a (config schema, in progress on
-another branch this session), E1-T05 (model-side contracts, depends on E1-T03b). `.venv` exists at repo root
-(uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
+Phase 0, E1-T01, E1-T02a, E1-T03a, E1-T03b, E1-T04 done. Next eligible: E1-T02b (YAML I/O/CLI, depends on
+E1-T02a), E1-T05 (model-side contracts, depends on E1-T03b). `.venv` exists at repo root (uv-managed, Python
+3.13.13); `uv sync --all-groups` works from a clean checkout.
 
 ## Blocked / needs owner
 
@@ -87,6 +87,22 @@ another branch this session), E1-T05 (model-side contracts, depends on E1-T03b).
   `free`/`bounded`/`prior` are all supported with `increasing` (tested), just not per-state mixtures.
   Also fixed: two specs sharing a `tie_group` with incompatible domain/cell shape were silently accepted
   (the second spec silently reused the first member's bijector); now raises `ConfigError` (commit 244dc73).
+- E1-T02a: created `src/regimekit/utils/clock.py` (`TRADING_DAYS_PER_YEAR`, `CALENDAR_DAYS_PER_YEAR`,
+  `days_to_steps`) ahead of its assumed owner (E2-T06/E3-T04), since E1-T02a is the first ticket needing a
+  days->steps conversion (sizing `model.d_max`'s default from `init_mean_sojourn_days`) — per CLAUDE.md §3.2's
+  own exact spec for the module's contents. E2-T06/E3-T04 should add `future_grid`/`is_irregular` to this same
+  file rather than recreating it. `parse_project_config()` converts pydantic's `ValidationError` into
+  `ConfigError(path=...)` (reporting only the first error found — multi-error reporting isn't specified by the
+  ticket and wasn't implemented); custom cross-field rules raise `ConfigError` directly from
+  `@model_validator` methods, which pydantic v2 does not intercept (only `ValueError`/`TypeError`/
+  `AssertionError` are wrapped), so they propagate unwrapped with the caller's own dotted path.
+- E1-T02a: independent review caught (1) a dead, unused `TRADING_DAYS_PER_YEAR = 252` in
+  `config/defaults.py` that duplicated `utils/clock.py`'s constant — exactly the literal CLAUDE.md §3.2
+  forbids outside `clock.py` — removed; (2) `ParamCfg`'s own `model_validator` raised `ConfigError` with a
+  bare field name (e.g. `path="values"`) since it has no ancestry context, losing which spec/state failed once
+  a config has multiple `ParamCfg`s — moved those checks to the top-level cross-field validator with full
+  dotted paths (`model.emission.params.mu.values`); (3) added a missing test for `transition.order >= 1`
+  (only the separate `order > 2` warning had a test). Commit 32644d8.
 - E1-T03a: independent review found `tests/property/test_e1_t03a_bijectors.py`'s round-trip checks
   (`inverse(forward(u)) == u`) used `atol=rtol=1e-6`, three orders of magnitude looser than AC1's required
   `1e-9`, with no justification (CLAUDE.md §6: never loosen a tolerance to get a suite green). Verified 1e-9
