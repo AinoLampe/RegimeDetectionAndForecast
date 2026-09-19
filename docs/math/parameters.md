@@ -37,3 +37,31 @@ Evaluated on `\theta`, returning a summed log-density (`model/params/priors.py`)
   normalizing constant `\log\Gamma(n\alpha) - n\log\Gamma(\alpha)`
 
 Default coefficient prior: `NormalPrior(0, coef_prior_sd=1.0)`.
+
+## Modes (`ParamManager`)
+
+`ParamManager` maps the flat unconstrained optimizer vector `u \in \mathbb{R}^p` to the constrained
+parameter pytree `\theta` (a `dict[str, Array]`), according to a per-parameter, per-state (or
+uniform) estimation **mode**:
+
+| Mode | Behaviour |
+|---|---|
+| `free` | Own coordinate(s) in `u`; `\theta` = `domain_bijector.forward(u_slice)`. |
+| `fixed` | No coordinate in `u`; `\theta` = the spec's `value`, unchanged. |
+| `tied` | One shared coordinate group per `tie_group` string; every member (within or across specs) reads the same `u` slice and is set to the identical `domain_bijector.forward(...)` — changing it changes every group member. |
+| `bounded` | Like `free`, but requires `domain="interval"` and `bounds` (an `IntervalBijector(lo, hi)`). |
+| `prior` | Like `free`, plus the spec's `prior` is added to `ParamManager.log_prior(theta)` for those entries. |
+
+A spec's `mode` can be a single string (applied uniformly across its leading "state" axis) or a
+tuple with one entry per state, mixing modes freely within one parameter (e.g. one state's rate
+fixed while the others are free).
+
+`constraint="increasing"` replaces the per-state independent bijector application with a single
+`IncreasingBijector` spanning the whole state axis (`shape = (N,)`, one uniform mode, never
+`fixed` or `tied`) — the array of `\theta` values across states is one ordering-constrained
+transform of the corresponding `N` `u` coordinates, not `N` independent scalar transforms.
+
+`n_free` (`p`) is the total number of `u` coordinates consumed: `cell_size` per `free`/`bounded`/
+`prior` entry (`cell_size - 1` for `simplex_ref`/`pmf` cells, since those bijectors have one fewer
+free coordinate than output dimension), `cell_size` once per distinct `tie_group`, `0` for `fixed`,
+and `N` for an `increasing` spec's whole state axis.

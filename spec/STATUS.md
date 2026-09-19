@@ -13,7 +13,7 @@
 | E1-T02a | Config schema (pydantic) + validation rules | M | 1 | E1-T01 | todo | | |
 | E1-T02b | YAML I/O, resolved config, migration hook, `validate-config` | M | 1 | E1-T02a | todo | | |
 | E1-T03a | Bijectors and priors | M | 1 | E0-T05 | done | a8e70bd | AC1-AC4 verified with real tests; independent review caught a loosened round-trip tolerance (1e-6 vs required 1e-9), fixed |
-| E1-T03b | `ParamSpec` / `ParamManager` | M | 1 | E1-T03a | todo | | |
+| E1-T03b | `ParamSpec` / `ParamManager` | M | 1 | E1-T03a | done | <PENDING> | AC1-AC5 verified with real tests inc. Appendix B n_free=20; independent review caught an unguarded tied-group shape mismatch and a missing increasing+prior/bounded test, both fixed |
 | E1-T04 | Distributions (`dists`) | M | 1 | E0-T05 | done | c4bb1e1 | AC1-AC5 verified with real tests vs scipy; independent review caught a fragile skip-heavy AC3 test, fixed to rejection-sample instead |
 | E1-T05 | Model-side contracts | S | 1 | E1-T03b | todo | | |
 | E2-T01 | Provider protocol, registry, csv adapter, contract suite | M | 2 | E1-T01 | todo | | |
@@ -69,15 +69,24 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-Phase 0, E1-T01, E1-T03a, E1-T04 done. Next eligible: E1-T02a (config schema, depends on E1-T01), E1-T03b
-(ParamSpec/ParamManager, depends on E1-T03a). `.venv` exists at repo root (uv-managed, Python 3.13.13);
-`uv sync --all-groups` works from a clean checkout.
+Phase 0, E1-T01, E1-T03a, E1-T03b, E1-T04 done. Next eligible: E1-T02a (config schema, in progress on
+another branch this session), E1-T05 (model-side contracts, depends on E1-T03b). `.venv` exists at repo root
+(uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
 
 ## Blocked / needs owner
 
 ## Spec fixes
 
 ## Findings for the owner
+- E1-T03b: `constraint="increasing"` requires a single uniform `mode` string, never a per-state tuple — the
+  ticket text only literally says "cannot be combined with per-state `fixed`," so rejecting *all* per-state
+  tuples (not just ones containing `fixed`) is an interpretation beyond the literal spec. Judgment call: a
+  joint ordering transform across states doesn't have a clean per-state-independent-mode semantics (which
+  coordinate would a `tied` or `fixed` state's `u`/`theta` even refer to inside one whole-array bijector
+  application?), so the restriction was kept; flagged per independent review rather than left silent. Modes
+  `free`/`bounded`/`prior` are all supported with `increasing` (tested), just not per-state mixtures.
+  Also fixed: two specs sharing a `tie_group` with incompatible domain/cell shape were silently accepted
+  (the second spec silently reused the first member's bijector); now raises `ConfigError` (commit 244dc73).
 - E1-T03a: independent review found `tests/property/test_e1_t03a_bijectors.py`'s round-trip checks
   (`inverse(forward(u)) == u`) used `atol=rtol=1e-6`, three orders of magnitude looser than AC1's required
   `1e-9`, with no justification (CLAUDE.md §6: never loosen a tolerance to get a suite green). Verified 1e-9

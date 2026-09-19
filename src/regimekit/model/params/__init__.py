@@ -10,12 +10,14 @@ from regimekit.model.params.bijectors import (
     PositiveBijector,
     SimplexRefBijector,
 )
+from regimekit.model.params.manager import ParamManager, Params
 from regimekit.model.params.priors import (
     DEFAULT_COEF_PRIOR,
     DirichletPrior,
     LogNormalPrior,
     NormalPrior,
 )
+from regimekit.model.params.spec import ParamSpec, Prior
 
 __all__ = [
     "DEFAULT_COEF_PRIOR",
@@ -27,7 +29,11 @@ __all__ = [
     "LogNormalPrior",
     "NormalPrior",
     "NuGt2Bijector",
+    "ParamManager",
+    "ParamSpec",
+    "Params",
     "PmfBijector",
     "PositiveBijector",
+    "Prior",
     "SimplexRefBijector",
 ]
