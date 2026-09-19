@@ -6,7 +6,7 @@
 |---|---|---|---|---|---|---|---|
 | E0-T01 | Repository skeleton | S | 0 | — | done | d976269 | AC1/AC2/AC4 verified locally (Windows host, uv 0.11.17, Python 3.13.13); AC3 (uv lock) resolves `jax-cuda12-plugin` universally, install skipped (Linux-only wheels, expected — see Needs CI/network/GPU) |
 | E0-T02 | Quality tooling | S | 0 | E0-T01 | done | ac0c2d6 | AC1-AC4 verified locally (`nox -s lint types tests` green, `pre-commit run --all-files` green); coverage gate + markers + hypothesis profile in place |
-| E0-T03 | CI workflows | S | 0 | E0-T02 | todo | | |
+| E0-T03 | CI workflows | S | 0 | E0-T02 | done | <PENDING> | AC2-AC4 verified locally; AC1 (<10min) unverifiable without a GH Actions run (no remote configured) — YAML validated structurally instead |
 | E0-T04 | Docs skeleton + ADR-0001…0010, 0012, 0013 | M | 0 | E0-T01 | todo | | |
 | E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | todo | | |
 | E1-T01 | Data contracts | M | 1 | E0-T05 | todo | | |
@@ -78,6 +78,15 @@ exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works f
 ## Spec fixes
 
 ## Findings for the owner
+- E0-T03: `.github/workflows/pr.yml`'s `docs` job runs `nox -s docs` (`mkdocs build --strict`), which needs
+  `mkdocs.yml` + docs content from E0-T04 to exist; it will fail if run before E0-T04 lands. E0-T04 is planned
+  later in this same session, so by session end this is resolved, but flagging since E0-T03 was implemented
+  first per the phase-row order.
+- E0-T03: `gpu.yml`'s "workflow_dispatch only; runs on a self-hosted runner if labelled, otherwise skipped"
+  is implemented as plain `runs-on: [self-hosted, gpu]` with no additional `if:` gate. Per independent review,
+  GitHub Actions doesn't actually report "skipped" for an unmatched self-hosted runner — the job just stays
+  queued indefinitely. Low severity (no self-hosted runner exists for 0.1.0, CLAUDE.md §9: "nothing may require
+  a GPU"); left as-is with a comment, flagged here rather than engineered further.
 - E0-T01: this session runs on native Windows, not Linux/WSL2 as CLAUDE.md §9 assumes. `uv sync --all-groups`,
   `uv build` and the import tests were verified here; anything that is genuinely Linux/WSL2-specific (e.g. an
   actual GPU-wheel install) could not be verified and is logged under "Needs CI / network / GPU" instead of
@@ -101,6 +110,10 @@ exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works f
 ## Follow-ups
 
 ## Needs CI / network / GPU
+- E0-T03 AC1: "PR pipeline completes in < 10 minutes on the skeleton" needs a real GitHub Actions run (no
+  remote configured for this repo yet); workflow YAML validated structurally instead
+  (`tests/unit/test_e0_t03_workflows.py`).
+- E0-T03: `gpu.yml` needs a real self-hosted GPU runner to confirm dispatch behavior; N/A for 0.1.0.
 - E0-T01 AC3: `uv sync --extra gpu` install (not just resolution) needs a Linux x86_64 host with matching CUDA
   wheels; `jax-cuda12-plugin` has no `win_amd64` wheel. `uv lock` already resolves the extra successfully
   (universal resolution, confirmed in `uv.lock`).
