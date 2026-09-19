@@ -5,7 +5,7 @@
 | ID | Title | Size | Phase | Deps | Status | Commit | Notes |
 |---|---|---|---|---|---|---|---|
 | E0-T01 | Repository skeleton | S | 0 | — | done | d976269 | AC1/AC2/AC4 verified locally (Windows host, uv 0.11.17, Python 3.13.13); AC3 (uv lock) resolves `jax-cuda12-plugin` universally, install skipped (Linux-only wheels, expected — see Needs CI/network/GPU) |
-| E0-T02 | Quality tooling | S | 0 | E0-T01 | done | <PENDING> | AC1-AC4 verified locally (`nox -s lint types tests` green, `pre-commit run --all-files` green); coverage gate + markers + hypothesis profile in place |
+| E0-T02 | Quality tooling | S | 0 | E0-T01 | done | ac0c2d6 | AC1-AC4 verified locally (`nox -s lint types tests` green, `pre-commit run --all-files` green); coverage gate + markers + hypothesis profile in place |
 | E0-T03 | CI workflows | S | 0 | E0-T02 | todo | | |
 | E0-T04 | Docs skeleton + ADR-0001…0010, 0012, 0013 | M | 0 | E0-T01 | todo | | |
 | E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | todo | | |
