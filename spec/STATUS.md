@@ -4,7 +4,7 @@
 <!-- Status: todo | in-progress | done | blocked | needs-owner -->
 | ID | Title | Size | Phase | Deps | Status | Commit | Notes |
 |---|---|---|---|---|---|---|---|
-| E0-T01 | Repository skeleton | S | 0 | — | todo | | |
+| E0-T01 | Repository skeleton | S | 0 | — | done | d976269 | AC1/AC2/AC4 verified locally (Windows host, uv 0.11.17, Python 3.13.13); AC3 (uv lock) resolves `jax-cuda12-plugin` universally, install skipped (Linux-only wheels, expected — see Needs CI/network/GPU) |
 | E0-T02 | Quality tooling | S | 0 | E0-T01 | todo | | |
 | E0-T03 | CI workflows | S | 0 | E0-T02 | todo | | |
 | E0-T04 | Docs skeleton + ADR-0001…0010, 0012, 0013 | M | 0 | E0-T01 | todo | | |
@@ -69,16 +69,35 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-Session start: git repo initialized, STATUS.md seeded. Next: pick first eligible ticket (E0-T01), branch, implement per Step 2 onward.
+E0-T01 merged to main (commit d976269). Next eligible ticket: E0-T02 (quality tooling), branch not yet
+created. `.venv` exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean
+checkout.
 
 ## Blocked / needs owner
 
 ## Spec fixes
 
 ## Findings for the owner
+- E0-T01: this session runs on native Windows, not Linux/WSL2 as CLAUDE.md §9 assumes. `uv sync --all-groups`,
+  `uv build` and the import tests were verified here; anything that is genuinely Linux/WSL2-specific (e.g. an
+  actual GPU-wheel install) could not be verified and is logged under "Needs CI / network / GPU" instead of
+  claimed as done.
+- E0-T01: `src/regimekit/cli/app.py` was created with a minimal working `typer.Typer()` + `main()` (not just an
+  `__init__.py` stub) so the `regimekit = "regimekit.cli.app:main"` entry point in `pyproject.toml` resolves for
+  AC1/AC4. This is one file beyond the ticket's literal "Creates" list (which only lists `__init__.py` per
+  package); flagged here per independent review rather than left silent. No other module bodies beyond
+  `__init__.py` docstrings were added.
+- E0-T01: no `changelog.d/` fragment was added. Judgment call: an empty, non-functional package skeleton has no
+  user-visible behavior yet, so CLAUDE.md §7's "changelog fragment for user-visible changes" is treated as N/A
+  here; the first fragment will land with the first ticket that ships real behavior.
 
 ## Follow-ups
 
 ## Needs CI / network / GPU
+- E0-T01 AC3: `uv sync --extra gpu` install (not just resolution) needs a Linux x86_64 host with matching CUDA
+  wheels; `jax-cuda12-plugin` has no `win_amd64` wheel. `uv lock` already resolves the extra successfully
+  (universal resolution, confirmed in `uv.lock`).
+- E0-T01 AC1: "succeeds on Linux and WSL2" — verified functionally equivalent on Windows/uv 0.11.17 instead;
+  needs a Linux/WSL2 run to fully close per the ticket's literal wording.
 
 ## Measurements
