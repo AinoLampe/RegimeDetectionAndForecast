@@ -12,7 +12,7 @@
 | E1-T01 | Data contracts | M | 1 | E0-T05 | done | d0c55e0 | AC1-AC6 verified with real tests; PreparedDataset uses a hand-written pytree registration (not register_dataclass) for `times`, see Findings; independent review caught a PrepStats hash/eq contract bug, fixed |
 | E1-T02a | Config schema (pydantic) + validation rules | M | 1 | E1-T01 | todo | | |
 | E1-T02b | YAML I/O, resolved config, migration hook, `validate-config` | M | 1 | E1-T02a | todo | | |
-| E1-T03a | Bijectors and priors | M | 1 | E0-T05 | done | <PENDING> | AC1-AC4 verified with real tests; independent review caught a loosened round-trip tolerance (1e-6 vs required 1e-9), fixed |
+| E1-T03a | Bijectors and priors | M | 1 | E0-T05 | done | a8e70bd | AC1-AC4 verified with real tests; independent review caught a loosened round-trip tolerance (1e-6 vs required 1e-9), fixed |
 | E1-T03b | `ParamSpec` / `ParamManager` | M | 1 | E1-T03a | todo | | |
 | E1-T04 | Distributions (`dists`) | M | 1 | E0-T05 | todo | | |
 | E1-T05 | Model-side contracts | S | 1 | E1-T03b | todo | | |
