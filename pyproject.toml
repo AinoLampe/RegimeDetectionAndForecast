@@ -51,3 +51,40 @@ regimekit = "regimekit.cli.app:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/regimekit"]
+
+[tool.coverage.run]
+source = ["regimekit"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+exclude_also = ["if TYPE_CHECKING:", "@overload"]
+
+[tool.coverage.json]
+output = "coverage.json"
+
+[tool.mypy]
+strict = true
+plugins = ["pydantic.mypy"]
+files = ["src"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+extend-exclude = ["spec/"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PT", "RUF", "D", "ANN", "NPY"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.pytest.ini_options]
+markers = [
+  "slow: nightly suites",
+  "live: network tests",
+  "benchmark: pytest-benchmark",
+  "gpu: requires GPU",
+]
+addopts = "-m 'not slow and not live and not benchmark and not gpu'"

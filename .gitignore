@@ -19,6 +19,7 @@ venv/
 .ruff_cache/
 .coverage
 .coverage.*
+coverage.json
 htmlcov/
 .hypothesis/
 
@@ -39,3 +40,6 @@ site/
 # IDE
 .vscode/
 .idea/
+
+# Claude Code runtime state
+.claude/scheduled_tasks.lock

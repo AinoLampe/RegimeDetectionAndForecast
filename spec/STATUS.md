@@ -5,7 +5,7 @@
 | ID | Title | Size | Phase | Deps | Status | Commit | Notes |
 |---|---|---|---|---|---|---|---|
 | E0-T01 | Repository skeleton | S | 0 | — | done | d976269 | AC1/AC2/AC4 verified locally (Windows host, uv 0.11.17, Python 3.13.13); AC3 (uv lock) resolves `jax-cuda12-plugin` universally, install skipped (Linux-only wheels, expected — see Needs CI/network/GPU) |
-| E0-T02 | Quality tooling | S | 0 | E0-T01 | todo | | |
+| E0-T02 | Quality tooling | S | 0 | E0-T01 | done | <PENDING> | AC1-AC4 verified locally (`nox -s lint types tests` green, `pre-commit run --all-files` green); coverage gate + markers + hypothesis profile in place |
 | E0-T03 | CI workflows | S | 0 | E0-T02 | todo | | |
 | E0-T04 | Docs skeleton + ADR-0001…0010, 0012, 0013 | M | 0 | E0-T01 | todo | | |
 | E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | todo | | |
@@ -69,9 +69,9 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-E0-T01 merged to main (commit d976269). Next eligible ticket: E0-T02 (quality tooling), branch not yet
-created. `.venv` exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean
-checkout.
+E0-T01, E0-T02 merged to main. Next eligible tickets (all depend only on E0-T02/E0-T01, may run in any order
+this session): E0-T03 (CI workflows), E0-T04 (docs/ADRs), E0-T05 (JAX bootstrap/RNG/errors/logging). `.venv`
+exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
 
 ## Blocked / needs owner
 
@@ -87,6 +87,13 @@ checkout.
   AC1/AC4. This is one file beyond the ticket's literal "Creates" list (which only lists `__init__.py` per
   package); flagged here per independent review rather than left silent. No other module bodies beyond
   `__init__.py` docstrings were added.
+- E0-T02: independent review flagged that a `version` CLI command was added to `cli/app.py` beyond the
+  ticket's scope (it was added to give the coverage gate something to exercise). Reverted: `cli/app.py` is
+  back to just `app`/`main`, `main()` is `# pragma: no cover`, and a small import-only test
+  (`test_e0_t02_cli_app_module.py`) covers the two module-level statements instead. Real CLI commands remain
+  for E6-T02/E6-T05/E8-T02.
+- E0-T02: no `changelog.d/` fragment was added (same N/A reasoning as E0-T01 below — quality tooling has no
+  user-visible behavior of its own).
 - E0-T01: no `changelog.d/` fragment was added. Judgment call: an empty, non-functional package skeleton has no
   user-visible behavior yet, so CLAUDE.md §7's "changelog fragment for user-visible changes" is treated as N/A
   here; the first fragment will land with the first ticket that ships real behavior.
