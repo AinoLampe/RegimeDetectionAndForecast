@@ -1,0 +1,116 @@
+"""`Posterior` (pytree-registered) and the `InferenceEngine` protocol stub (E1-T05).
+
+`Posterior.engine` (a static `Literal["expanded", "explicit"]` dispatch tag) is added by E4-T04,
+not here; `elapsed_posterior()` below is a single engine-agnostic implementation (bucketing
+`smoothed` mass by `(regime_of, phase_of)`) that E4-T04 may refine into real per-engine dispatch.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Protocol
+
+import jax
+import jax.numpy as jnp
+
+from regimekit.statespace.index import StateIndex
+from regimekit.utils.typing import Array
+
+if TYPE_CHECKING:
+    from regimekit.data.contracts import PreparedDataset
+    from regimekit.model.params import Params
+    from regimekit.model.spec import ModelSpec
+
+
+@dataclass(frozen=True)
+class _StaticRef:
+    """Wraps an arbitrary object as identity-hashable pytree aux data.
+
+    `StateIndex` mixes JAX-array leaves with static ints (equinox's own default `__eq__`/`__hash__`
+    would try to compare/hash the array leaves too, hitting the same "numpy/JAX arrays are
+    unhashable" gotcha as CLAUDE.md §5 -- see `data/contracts.py`'s `_HashableArray` for the same
+    pattern). A `StateIndex` is built once per model and reused for the fit's lifetime, so
+    identity (not structural) equality is the right tradeoff here: cheap, and correct because
+    no two distinct-but-equal `StateIndex` instances are expected to coexist in practice.
+    """
+
+    value: Any
+
+    def __eq__(self, other: object) -> bool:
+        return isinstance(other, _StaticRef) and self.value is other.value
+
+    def __hash__(self) -> int:
+        return id(self.value)
+
+
+@dataclass(frozen=True)
+class Posterior:
+    """Raw forward-backward output: log-alpha/beta, smoothed posterior, loglik, and the index."""
+
+    log_alpha: Array  # (T, S)
+    log_beta: Array  # (T, S)
+    smoothed: Array  # (T, S)
+    loglik: Array  # 0-d Array (a pytree leaf; PosteriorResult/FitResult.loglik are plain float)
+    index: StateIndex
+
+    def regime_filtered(self) -> Array:
+        """`softmax(log_alpha) @ C`, shape `(T, N)`."""
+        return jax.nn.softmax(self.log_alpha, axis=-1) @ self.index.collapse
+
+    def regime_smoothed(self) -> Array:
+        """`smoothed @ C`, shape `(T, N)`."""
+        return self.smoothed @ self.index.collapse
+
+    def elapsed_posterior(self) -> Array:
+        """`(T, N, max_phase)`: smoothed mass bucketed by `(regime_of, phase_of)`.
+
+        `max_phase` is `D_max` for the explicit engine or `max(r)` for the expanded engine's
+        phase expansion -- both are "how many phase/elapsed-time buckets a regime has", so one
+        implementation covers both (see module docstring).
+        """
+        index = self.index
+        n_series = index.collapse.shape[1]
+        max_phase = int(jnp.max(index.phase_of)) if index.phase_of.size else 0
+        regime_one_hot = jax.nn.one_hot(index.regime_of, n_series)  # (S, N)
+        phase_one_hot = jax.nn.one_hot(index.phase_of - 1, max_phase)  # (S, max_phase)
+        indicator = regime_one_hot[:, :, None] * phase_one_hot[:, None, :]  # (S, N, max_phase)
+        return jnp.einsum("ts,snp->tnp", self.smoothed, indicator)
+
+
+def _flatten_posterior(posterior: Posterior) -> tuple[tuple[Array, ...], _StaticRef]:
+    children = (posterior.log_alpha, posterior.log_beta, posterior.smoothed, posterior.loglik)
+    return children, _StaticRef(posterior.index)
+
+
+def _unflatten_posterior(aux: _StaticRef, children: tuple[Array, ...]) -> Posterior:
+    log_alpha, log_beta, smoothed, loglik = children
+    return Posterior(
+        log_alpha=log_alpha, log_beta=log_beta, smoothed=smoothed, loglik=loglik, index=aux.value
+    )
+
+
+jax.tree_util.register_pytree_node(Posterior, _flatten_posterior, _unflatten_posterior)
+
+
+class InferenceEngine(Protocol):
+    """Structural type for the expanded/explicit-duration inference engines (E4-T03*/E4-T06*)."""
+
+    def loglik(self, theta: Params, data: PreparedDataset, spec: ModelSpec) -> Array:
+        """`log p(y_1:T)`, a 0-d `Array` (a pytree leaf)."""
+        ...
+
+    def forward(self, theta: Params, data: PreparedDataset, spec: ModelSpec) -> Array:
+        """The forward recursion's `log_alpha`, shape `(T, S)`."""
+        ...
+
+    def forward_backward(self, theta: Params, data: PreparedDataset, spec: ModelSpec) -> Posterior:
+        """Full forward-backward, returning a `Posterior`."""
+        ...
+
+    def viterbi(self, theta: Params, data: PreparedDataset, spec: ModelSpec) -> Array:
+        """The most likely expanded-state path, shape `(T,)`."""
+        ...
+
+    def approx(self, theta: Params, data: PreparedDataset, spec: ModelSpec) -> Posterior:
+        """Approximate inference (factorial models, ADR-0008); unimplemented until E9-T02."""
+        ...
