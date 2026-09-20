@@ -15,7 +15,7 @@
 | E1-T03a | Bijectors and priors | M | 1 | E0-T05 | done | a8e70bd | AC1-AC4 verified with real tests; independent review caught a loosened round-trip tolerance (1e-6 vs required 1e-9), fixed |
 | E1-T03b | `ParamSpec` / `ParamManager` | M | 1 | E1-T03a | done | a99f87d | AC1-AC5 verified with real tests inc. Appendix B n_free=20; independent review caught an unguarded tied-group shape mismatch and a missing increasing+prior/bounded test, both fixed |
 | E1-T04 | Distributions (`dists`) | M | 1 | E0-T05 | done | c4bb1e1 | AC1-AC5 verified with real tests vs scipy; independent review caught a fragile skip-heavy AC3 test, fixed to rejection-sample instead |
-| E1-T05 | Model-side contracts | S | 1 | E1-T03b | done | <PENDING> | AC1-AC3 verified (mypy --strict passes with Protocol stubs; collapse helpers verified on a hand-built 2-regime, 3-phase StateIndex); independent review found no blocking issues, one follow-up logged |
+| E1-T05 | Model-side contracts | S | 1 | E1-T03b | done | b4c7639 | AC1-AC3 verified (mypy --strict passes with Protocol stubs; collapse helpers verified on a hand-built 2-regime, 3-phase StateIndex); independent review found no blocking issues, one follow-up logged |
 | E2-T01 | Provider protocol, registry, csv adapter, contract suite | M | 2 | E1-T01 | todo | | |
 | E2-T02 | yfinance adapter | M | 2 | E2-T01 | todo | | |
 | E2-T03 | stooq adapter | S | 2 | E2-T01 | todo | | |
