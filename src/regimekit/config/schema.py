@@ -37,7 +37,7 @@ DurationFamily = Literal["geometric", "negbin", "poisson", "gamma", "weibull", "
 
 
 class _Base(BaseModel):
-    model_config = ConfigDict(extra="forbid")
+    model_config = ConfigDict(extra="forbid", validate_assignment=True)
 
 
 # --- project / data -------------------------------------------------------------------------

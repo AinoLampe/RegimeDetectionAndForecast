@@ -80,6 +80,9 @@ select = ["E", "F", "W", "I", "N", "UP", "B", "SIM", "PT", "RUF", "D", "ANN", "N
 [tool.ruff.lint.pydocstyle]
 convention = "google"
 
+[tool.ruff.lint.per-file-ignores]
+"src/regimekit/cli/*.py" = ["B008"]  # typer's Option()/Argument() defaults require call-in-default
+
 [tool.pytest.ini_options]
 markers = [
   "slow: nightly suites",

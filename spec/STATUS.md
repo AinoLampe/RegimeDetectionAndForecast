@@ -11,7 +11,7 @@
 | E0-T05 | JAX runtime bootstrap, RNG, errors, logging | S | 0 | E0-T01 | done | d53f2cc | AC1 guard verified via monkeypatch (natural repro doesn't trigger in installed JAX, see Findings); AC2-AC5 verified with real tests |
 | E1-T01 | Data contracts | M | 1 | E0-T05 | done | d0c55e0 | AC1-AC6 verified with real tests; PreparedDataset uses a hand-written pytree registration (not register_dataclass) for `times`, see Findings; independent review caught a PrepStats hash/eq contract bug, fixed |
 | E1-T02a | Config schema (pydantic) + validation rules | M | 1 | E1-T01 | done | 54330e6 | AC1-AC5 verified with real tests, Appendix A + steps-clock fixtures, ~15 cross-field rules each with a ConfigError.path test; independent review caught a dead literal-252 constant and imprecise ParamCfg error paths, both fixed |
-| E1-T02b | YAML I/O, resolved config, migration hook, `validate-config` | M | 1 | E1-T02a | todo | | |
+| E1-T02b | YAML I/O, resolved config, migration hook, `validate-config` | M | 1 | E1-T02a | done | <PENDING> | AC1-AC6 verified with real tests incl. real CLI invocations; independent review caught an invalid --device/--log-level override crashing with a raw pydantic traceback instead of ConfigError+exit2, fixed |
 | E1-T03a | Bijectors and priors | M | 1 | E0-T05 | done | a8e70bd | AC1-AC4 verified with real tests; independent review caught a loosened round-trip tolerance (1e-6 vs required 1e-9), fixed |
 | E1-T03b | `ParamSpec` / `ParamManager` | M | 1 | E1-T03a | done | a99f87d | AC1-AC5 verified with real tests inc. Appendix B n_free=20; independent review caught an unguarded tied-group shape mismatch and a missing increasing+prior/bounded test, both fixed |
 | E1-T04 | Distributions (`dists`) | M | 1 | E0-T05 | done | c4bb1e1 | AC1-AC5 verified with real tests vs scipy; independent review caught a fragile skip-heavy AC3 test, fixed to rejection-sample instead |
@@ -69,15 +69,31 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-Phase 0, E1-T01, E1-T02a, E1-T03a, E1-T03b, E1-T04 done. Next eligible: E1-T02b (YAML I/O/CLI, depends on
-E1-T02a), E1-T05 (model-side contracts, depends on E1-T03b). `.venv` exists at repo root (uv-managed, Python
-3.13.13); `uv sync --all-groups` works from a clean checkout.
+Phase 0 and all of Phase 1 (E1-T01 through E1-T05) done this session. Phase 1 exit criterion met: config
+schema validates Appendix A; `ParamManager` and `dists` fully tested. Phase 2 (E2-*/E3-*/E4-T01) is next.
+`.venv` exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
 
 ## Blocked / needs owner
 
 ## Spec fixes
 
 ## Findings for the owner
+- E1-T05: `Posterior`'s `index` field uses an identity-based `_StaticRef` wrapper for its custom pytree
+  registration (same pattern as `ParamManager`, E1-T03b), unlike `PrepStats`'s content-based hash (E1-T01).
+  Independent review confirmed this cannot cause *wrong* results (identity mismatch only ever forces an
+  extra recompile, never a stale/incorrect cache hit), but it is a real, if modest, performance divergence
+  from the content-hashing pattern already established for `PrepStats`: whichever ticket first calls the
+  same jitted function repeatedly with distinct-but-structurally-identical `StateIndex` objects (most likely
+  E7-T02b's walk-forward folds, or E5-T03's multi-start restarts) will pay for a fresh trace every time
+  rather than reusing one. Follow-up for whoever wires those hot loops: consider a content-based hash for
+  `StateIndex` (e.g. hashing `.tobytes()` of its array fields, mirroring `PrepStats`) if profiling shows this
+  matters in practice.
+- E1-T02b: independent review found `--device bogus` (or any invalid `--device`/`--log-level` override)
+  crashed with an unhandled `pydantic.ValidationError` and Click's generic exit code 1, instead of the
+  documented `ConfigError` + exit 2, because `validate_assignment=True` (E1-T02a) raises `ValidationError` on
+  assignment, which `validate_config_cmd`'s `except RegimekitError` didn't catch. Fixed by converting
+  `pydantic.ValidationError` to `ConfigError(path=...)` inside `_apply_overrides`, the same way
+  `parse_project_config` already does (commit e6fc9e7).
 - E1-T03b: `constraint="increasing"` requires a single uniform `mode` string, never a per-state tuple — the
   ticket text only literally says "cannot be combined with per-state `fixed`," so rejecting *all* per-state
   tuples (not just ones containing `fixed`) is an interpretation beyond the literal spec. Judgment call: a
