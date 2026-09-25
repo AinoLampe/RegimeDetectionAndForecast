@@ -29,7 +29,7 @@
 | E3-T02 | Student-t emission | S | 2 | E3-T01 | todo | | |
 | E3-T03 | `DurationFamily` + geometric + negbin | M | 2 | E1-T03b, E1-T04 | done | 8a172b7 | AC1-AC6 verified with real tests (NumPy phase-chain sim vs 3 SE, negbin r=1 == geometric bitwise/1e-12, irregular dt, covariate zero/monotonic, Appendix E 4dp, steps clock + bitwise init_mean_sojourn_steps); independent review found no issues |
 | E3-T04 | Explicit duration families | M | 2 | E3-T03 | todo | | |
-| E3-T05 | `TransitionModel` (jump, logit link, generator) | M | 2 | E1-T03b | done | (pending) | AC1-AC5 verified with real tests (rows sum to 1 at 1e-12 incl. zero-on-current, no-covariate time invariance, Appendix B param counts via `ParamManager.n_free`, generator `expm` golden + Δ→0 property, order-2 layout); independent review caught two silent config-wiring gaps (`coef_prior_sd` ignored, Dirichlet prior dropped when covariates configured), both fixed; Appendix E golden numbers corrected (see Spec fixes) |
+| E3-T05 | `TransitionModel` (jump, logit link, generator) | M | 2 | E1-T03b | done | 8e657c5 | AC1-AC5 verified with real tests (rows sum to 1 at 1e-12 incl. zero-on-current, no-covariate time invariance, Appendix B param counts via `ParamManager.n_free`, generator `expm` golden + Δ→0 property, order-2 layout); independent review caught two silent config-wiring gaps (`coef_prior_sd` ignored, Dirichlet prior dropped when covariates configured), both fixed; Appendix E golden numbers corrected (see Spec fixes) |
 | E3-T06 | Lattice + ordering + post-sort | S | 2 | E3-T01 | todo | | |
 | E4-T01 | NumPy reference implementations | M | 2 | E1-T04 | todo | | |
 | E4-T02a | `StateIndex` + `build_expanded` | M | 3 | E1-T05, E3-T03, E3-T05 | todo | | |
