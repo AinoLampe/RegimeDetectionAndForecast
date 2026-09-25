@@ -1,11 +1,44 @@
 # Emissions
 
-!!! note
-    Stub page (E0-T04). Filled in by E3-T01 (GBM), E3-T02 (Student-t); completed in E8-T04.
-
 Each `EmissionFamily` gives the per-step, per-regime log-density of the observation `y_t` given the active
 regime `i`, in continuous-time parameters converted to the step's `\Delta_t` (ADR-0001):
 
 $$
 \log p(y_t \mid z_t = i, \Delta_t) = \ell_i(y_t; \theta_i, \Delta_t)
 $$
+
+## GBM (`GBMFamily`, E3-T01)
+
+Per-state geometric Brownian motion: Gaussian log-returns scaled by `\Delta_t`, with linear drift and
+log-volatility covariate links.
+
+$$
+y_t \mid z_t = i \sim \mathcal{N}\!\left(\left(\mu_i(t) - \tfrac{1}{2}\sigma_i(t)^2\right)\Delta_t,\; \sigma_i(t)^2 \Delta_t\right)
+$$
+
+$$
+\mu_i(t) = \mu_i + \gamma_i^\top z^e_t \qquad
+\log \sigma_i(t) = \log \sigma_i + \delta_i^\top z^e_t
+$$
+
+`\mu_i`/`\sigma_i` are in clock units: annualized under the `trading`/`calendar` clocks (`\mu` per year,
+`\sigma` per `\sqrt{\text{year}}`), per step under `steps` (where `\Delta_t \equiv 1`, so the density
+collapses to `N(\mu_i - \sigma_i^2/2, \sigma_i^2)`) — no code branches on the clock name (CLAUDE.md §3.2).
+
+`GBMFamily` declares `support = "real"` and `scale_by_dt = True`. Emission covariates (`z`, the
+`cov_emission` block) may drive drift and log-volatility through different column subsets, selected by
+`drift_idx`/`logvol_idx`; `gamma`/`delta` are present only when the corresponding covariate list is
+non-empty, with a default `NormalPrior(0, coef_prior_sd)` regularizer (`emission.gamma`, `emission.delta`).
+
+`GBMFamily.from_config` maps `model.emission` config to a configured instance plus its `ParamSpec`s
+(`emission.mu`, `emission.sigma`, and `emission.gamma`/`emission.delta` when configured). The `increasing`
+bijector (`ParamManager`) only supports a 1-D `(N,)` cell, so a `constraint: increasing` on `sigma`
+collapses its spec to `(N,)` rather than `(N, M)` — a per-series ordering constraint has no clean joint
+semantics. This matches Appendix A's single-series (`M = 1`) usage; `from_config` raises `ConfigError`
+for `constraint: increasing` with `n_series > 1` rather than silently sharing one ordered value across
+every series.
+
+## Stub families (later tickets)
+
+!!! note
+    Student-t (E3-T02); OU/jump/GARCH families are out of scope for 0.1.0 (see E9-T03 spike).

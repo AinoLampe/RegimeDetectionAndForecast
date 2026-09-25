@@ -25,7 +25,7 @@
 | E2-T07 | `Preparer` fit/transform | M | 2 | E2-T06 | todo | | |
 | E2-T08 | `fetch` command + data-quality report | S | 2 | E2-T05, E2-T07, E1-T02b | todo | | |
 | E2-T09 | tiingo adapter (optional) | S | 2 | E2-T01 | todo | | |
-| E3-T01 | `EmissionFamily` protocol + GBM | M | 2 | E1-T03b, E1-T04 | todo | | |
+| E3-T01 | `EmissionFamily` protocol + GBM | M | 2 | E1-T03b, E1-T04 | done | (pending) | AC1-AC6 verified with real tests (scipy refs at 1e-12, Appendix E numbers, covariate zero/nonzero, 3-SE sampler moments, jit+grad, steps-clock); independent review caught a silent cross-series sigma-sharing gap under `constraint=increasing` + `n_series>1`, fixed (now `ConfigError`), plus a test-quality nit (AC2 read family's own `_mean_sd` instead of recomputing), fixed |
 | E3-T02 | Student-t emission | S | 2 | E3-T01 | todo | | |
 | E3-T03 | `DurationFamily` + geometric + negbin | M | 2 | E1-T03b, E1-T04 | todo | | |
 | E3-T04 | Explicit duration families | M | 2 | E3-T03 | todo | | |
@@ -69,15 +69,39 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-Phase 0 and all of Phase 1 (E1-T01 through E1-T05) done this session. Phase 1 exit criterion met: config
-schema validates Appendix A; `ParamManager` and `dists` fully tested. Phase 2 (E2-*/E3-*/E4-T01) is next.
-`.venv` exists at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
+Phase 0 and all of Phase 1 (E1-T01 through E1-T05) done. Phase 1 exit criterion met: config schema validates
+Appendix A; `ParamManager` and `dists` fully tested. `.venv` exists at repo root (uv-managed, Python 3.13.13);
+`uv sync --all-groups` works from a clean checkout.
+
+This run (autonomous, budget 5): critical-path Phase 2/3 tickets E3-T01 -> E3-T03 -> E3-T05 -> E4-T02a ->
+E4-T02b. E3-T01 done (see below, commit pending merge). Next up: E3-T03 (`DurationFamily` + geometric +
+negbin), deps E1-T03b/E1-T04 already done.
 
 ## Blocked / needs owner
 
 ## Spec fixes
 
 ## Findings for the owner
+- E3-T01: `GBMFamily.from_config` maps `EmissionCfg` -> `ParamSpec`s directly in `gbm.py` (private
+  `_spec_from_paramcfg`/`_prior_from_cfg`/`_broadcast_per_state`/`_coef_spec` helpers), per the "every
+  family gets a `from_config`" pattern (CLAUDE.md §3.3). This `ParamCfg -> ParamSpec` mapping (modes,
+  per-state values/init broadcasting, bounds, tie groups, `PriorCfg -> Prior` incl. lognormal's
+  `mean_log = log(init).mean()`) is generic and will very likely be needed near-identically by
+  duration (E3-T03/E3-T04) and transition (E3-T05) families; consider factoring a shared helper into
+  `model/params/` once 2-3 families have duplicated it, rather than before (no shared code was
+  extracted here to avoid guessing the right generalization ahead of a second data point). Only the
+  `mu`/`sigma`/`gamma`/`delta` combination is exercised by E3-T01's tests; edge cases (tied `mu`,
+  `bounded` mode, `PriorCfg` on a `free`-mode param as Appendix A's `sigma` does — see below) get
+  real end-to-end coverage once `ParamManager.log_prior`/MAP estimation runs (E5-T01+).
+- E3-T01: Appendix A's `model.emission.params.sigma` sets `mode: free` *and* a `prior: {type:
+  lognormal, sd: 1.0}` (`tests/fixtures/configs/appendix_a.yaml`), but `ParamManager.log_prior`
+  (E1-T03b, already merged) only sums a spec's prior for states where `mode == "prior"` — so a `free`
+  mode with a `prior` attached is accepted (and the prior is stored on the built `ParamSpec`
+  unconditionally, matching Appendix A's field-for-field content) but silently has no effect on the
+  objective until/unless the mode is `"prior"`. This is a pre-existing config/`ParamManager` semantics
+  question from E1-T02a/E1-T03b, not something E3-T01 introduces or can resolve on its own (`ParamCfg`
+  is a generic cross-family config type); flagging for whoever wires `estimation/objective.py` (E5-T01)
+  or revisits Appendix A's exact intent.
 - E1-T05: `Posterior`'s `index` field uses an identity-based `_StaticRef` wrapper for its custom pytree
   registration (same pattern as `ParamManager`, E1-T03b), unlike `PrepStats`'s content-based hash (E1-T01).
   Independent review confirmed this cannot cause *wrong* results (identity mismatch only ever forces an

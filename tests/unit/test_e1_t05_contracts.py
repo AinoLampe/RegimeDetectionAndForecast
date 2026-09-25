@@ -188,11 +188,28 @@ def test_e1_t05_posterior_tree_flatten_unflatten_round_trips() -> None:
 
 
 class _StubEmission:
+    name = "stub"
+    native_time = "continuous"
     support = "real"
     scale_by_dt = True
 
-    def log_prob(self, y: object, theta: object, dt: object) -> object:
+    def param_specs(self, n_states: object, n_series: object, cov_names: object) -> object:
+        return ()
+
+    def log_prob(self, y: object, dt: object, theta: object, z: object) -> object:
         return 0.0
+
+    def sample(self, key: object, regime: object, dt: object, theta: object, z: object) -> object:
+        return 0.0
+
+    def init_carry(self) -> object:
+        return None
+
+    def step_carry(self, carry: object, y_t: object, theta: object) -> object:
+        return carry
+
+    def sufficient_stats(self, y: object, dt: object, gamma: object) -> object:
+        return None
 
 
 class _StubDuration:
