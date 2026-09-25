@@ -29,7 +29,7 @@
 | E3-T02 | Student-t emission | S | 2 | E3-T01 | todo | | |
 | E3-T03 | `DurationFamily` + geometric + negbin | M | 2 | E1-T03b, E1-T04 | done | 8a172b7 | AC1-AC6 verified with real tests (NumPy phase-chain sim vs 3 SE, negbin r=1 == geometric bitwise/1e-12, irregular dt, covariate zero/monotonic, Appendix E 4dp, steps clock + bitwise init_mean_sojourn_steps); independent review found no issues |
 | E3-T04 | Explicit duration families | M | 2 | E3-T03 | todo | | |
-| E3-T05 | `TransitionModel` (jump, logit link, generator) | M | 2 | E1-T03b | todo | | |
+| E3-T05 | `TransitionModel` (jump, logit link, generator) | M | 2 | E1-T03b | done | (pending) | AC1-AC5 verified with real tests (rows sum to 1 at 1e-12 incl. zero-on-current, no-covariate time invariance, Appendix B param counts via `ParamManager.n_free`, generator `expm` golden + Δ→0 property, order-2 layout); independent review caught two silent config-wiring gaps (`coef_prior_sd` ignored, Dirichlet prior dropped when covariates configured), both fixed; Appendix E golden numbers corrected (see Spec fixes) |
 | E3-T06 | Lattice + ordering + post-sort | S | 2 | E3-T01 | todo | | |
 | E4-T01 | NumPy reference implementations | M | 2 | E1-T04 | todo | | |
 | E4-T02a | `StateIndex` + `build_expanded` | M | 3 | E1-T05, E3-T03, E3-T05 | todo | | |
@@ -74,13 +74,28 @@ Appendix A; `ParamManager` and `dists` fully tested. `.venv` exists at repo root
 `uv sync --all-groups` works from a clean checkout.
 
 This run (autonomous, budget 5): critical-path Phase 2/3 tickets E3-T01 -> E3-T03 -> E3-T05 -> E4-T02a ->
-E4-T02b. E3-T01, E3-T03 done. Next up: E3-T05 (`TransitionModel`: jump, logit link, generator), dep
-E1-T03b already done. `MemoryLayout` placeholder already exists in `model/transition.py` (E1-T05) for
-E3-T05 to finalize.
+E4-T02b. E3-T01, E3-T03, E3-T05 done. Next up: E4-T02a (`StateIndex` + `build_expanded`), deps E1-T05,
+E3-T03, E3-T05 all done. E4-T02a's ticket text says it "produces `MemoryLayout` rows (E3-T05) consistent
+with the tuple enumeration: `row_of_state (S,)`" -- `row_of_state` already exists as a field on
+`StateIndex` (`statespace/index.py`, from E1-T05), not on `MemoryLayout`; E4-T02a should populate it
+there, consistent with the current `MemoryLayout` (tuples/current_of/target_mask, no `row_of_state`).
 
 ## Blocked / needs owner
 
 ## Spec fixes
+- E3-T05: concept Appendix E's generator-mode golden numbers (§ "Worked numbers for the default"),
+  `expm(QΔ)` off-diagonals for `λ=(2,6)`, weekly `Δ=1/52`, are stated as `0.0357 / 0.1070`. Verified
+  independently two ways -- `scipy.linalg.expm([[-2,2],[6,-6]] * 1/52)` and the closed-form 2-state
+  CTMC stationary-distribution formula `π_j (1 - exp(-(λ_0+λ_1)Δ))` -- both agreeing to 15+ digits
+  that the correct values are `0.035649... / 0.106947...`, rounding to `0.0356 / 0.1069`. This is a
+  last-digit rounding slip in the concept text (not a semantic disagreement covered by CLAUDE.md §1's
+  ticket-vs-concept rule, since the ticket just inherits the same numbers). Implemented the verified-
+  correct math (independent review re-verified both computations and confirmed) and asserted the
+  correct values in `test_e3_t05_appendix_e_generator_golden`; the concept/ticket text itself was not
+  edited (never edit `spec/concept/*`, and no ticket-text edit was needed since CLAUDE.md §3 already
+  covers deviations without requiring a ticket file change when the ticket's numeric claim, not its
+  semantics, is what's off). The `(λ_max Δ)²`-bound and `Δ→0` convergence acceptance criteria (also
+  part of AC4) hold regardless and are unaffected.
 
 ## Findings for the owner
 - E3-T01/E3-T03: `GBMFamily.from_config` (gbm.py) and `GeometricDuration.from_config`/

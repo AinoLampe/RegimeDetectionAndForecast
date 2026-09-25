@@ -242,6 +242,9 @@ class _StubDuration:
 class _StubTransition:
     mode = "jump"
 
+    def param_specs(self, n_states: object, order: object, cov_names: object) -> object:
+        return ()
+
     def jump_probs(self, theta: object, z_pi: object, memory: MemoryLayout) -> object:
         return 0.0
 
