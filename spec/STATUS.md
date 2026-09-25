@@ -32,7 +32,7 @@
 | E3-T05 | `TransitionModel` (jump, logit link, generator) | M | 2 | E1-T03b | done | 8e657c5 | AC1-AC5 verified with real tests (rows sum to 1 at 1e-12 incl. zero-on-current, no-covariate time invariance, Appendix B param counts via `ParamManager.n_free`, generator `expm` golden + Δ→0 property, order-2 layout); independent review caught two silent config-wiring gaps (`coef_prior_sd` ignored, Dirichlet prior dropped when covariates configured), both fixed; Appendix E golden numbers corrected (see Spec fixes) |
 | E3-T06 | Lattice + ordering + post-sort | S | 2 | E3-T01 | todo | | |
 | E4-T01 | NumPy reference implementations | M | 2 | E1-T04 | todo | | |
-| E4-T02a | `StateIndex` + `build_expanded` | M | 3 | E1-T05, E3-T03, E3-T05 | todo | | |
+| E4-T02a | `StateIndex` + `build_expanded` | M | 3 | E1-T05, E3-T03, E3-T05 | done | (pending) | AC1-AC5 verified with real tests (S formula incl. hypothesis property, order-2/3 tuple validity, one-hot collapse + independent reference enumeration, entry_state_of shift correctness, pair conditioning N(N-1) distinct values); independent review found no blocking issues (strengthened one jit test per its minor note: pass StateSpace as an actual jit arg + a no-recompile check, rather than only closing over it) |
 | E4-T02b | Per-step `A_t` builder | M | 3 | E4-T02a | todo | | |
 | E4-T03a | Expanded engine: forward / loglik | M | 3 | E4-T01, E4-T02b, E3-T01 | todo | | |
 | E4-T03b | Expanded engine: backward / smoothed / `Posterior` | M | 3 | E4-T03a | todo | | |
@@ -73,12 +73,17 @@ Phase 0 and all of Phase 1 (E1-T01 through E1-T05) done. Phase 1 exit criterion 
 Appendix A; `ParamManager` and `dists` fully tested. `.venv` exists at repo root (uv-managed, Python 3.13.13);
 `uv sync --all-groups` works from a clean checkout.
 
-This run (autonomous, budget 5): critical-path Phase 2/3 tickets E3-T01 -> E3-T03 -> E3-T05 -> E4-T02a ->
-E4-T02b. E3-T01, E3-T03, E3-T05 done. Next up: E4-T02a (`StateIndex` + `build_expanded`), deps E1-T05,
-E3-T03, E3-T05 all done. E4-T02a's ticket text says it "produces `MemoryLayout` rows (E3-T05) consistent
-with the tuple enumeration: `row_of_state (S,)`" -- `row_of_state` already exists as a field on
-`StateIndex` (`statespace/index.py`, from E1-T05), not on `MemoryLayout`; E4-T02a should populate it
-there, consistent with the current `MemoryLayout` (tuples/current_of/target_mask, no `row_of_state`).
+This run (autonomous, budget 5, now exhausted): critical-path tickets E3-T01, E3-T03, E3-T05, E4-T02a all
+done. `.venv` at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
+`nox -s lint types tests docs` green on `main` after every ticket.
+
+Next eligible (critical path, Step 1 order): **E4-T02b** (Per-step `A_t` builder), dep E4-T02a now done.
+E4-T02b's own ticket text (already read during E4-T02a) says to add `advance_prob_t`/`jump_probs_t` "if not
+already present" to the E3-T03/E3-T05 families -- both already exist (added proactively during those
+tickets per CLAUDE.md §3.3), so E4-T02b can use them directly. `StateSpace.transition_fn` is currently a
+`NotImplementedError` placeholder (`statespace/index.py`) for E4-T02b to fill; `initial_log_rho`'s
+`"stationary"` branch (`statespace/builders.py`) also needs `A_t`, deferred there too. After E4-T02b: next
+critical-path tickets are E4-T03a (Expanded engine forward/loglik, needs E4-T01 too) then E4-T03b.
 
 ## Blocked / needs owner
 

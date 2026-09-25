@@ -56,6 +56,7 @@ nav:
       - Emissions: math/emissions.md
       - Durations: math/durations.md
       - Transitions: math/transitions.md
+      - State space: math/statespace.md
       - Engines: math/engines.md
       - Estimation: math/estimation.md
       - Forecasting: math/forecasting.md

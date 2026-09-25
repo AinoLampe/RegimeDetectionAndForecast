@@ -22,7 +22,7 @@ if TYPE_CHECKING:
     from regimekit.config.schema import TransitionCfg
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class MemoryLayout:
     """Maps each admissible memory tuple (row `r`) to the regime whose exit it models.
 
@@ -37,6 +37,26 @@ class MemoryLayout:
     tuples: np.ndarray
     current_of: np.ndarray
     target_mask: np.ndarray
+
+    def __eq__(self, other: object) -> bool:
+        """Structural equality, safe for numpy array fields.
+
+        Needed once `StateSpace` (E4-T02a) stores a `MemoryLayout` as `eqx.field(static=True)`
+        (CLAUDE.md §5's numpy-unhashable gotcha).
+        """
+        if not isinstance(other, MemoryLayout):
+            return NotImplemented
+        return (
+            self.n_states == other.n_states
+            and self.order == other.order
+            and np.array_equal(self.tuples, other.tuples)
+            and np.array_equal(self.current_of, other.current_of)
+            and np.array_equal(self.target_mask, other.target_mask)
+        )
+
+    def __hash__(self) -> int:
+        """Content-based hash, consistent with `__eq__`."""
+        return hash((self.n_states, self.order, self.tuples.tobytes(), self.current_of.tobytes()))
 
 
 def build_memory_layout(n_states: int, order: int) -> MemoryLayout:
