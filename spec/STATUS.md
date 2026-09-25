@@ -27,7 +27,7 @@
 | E2-T09 | tiingo adapter (optional) | S | 2 | E2-T01 | todo | | |
 | E3-T01 | `EmissionFamily` protocol + GBM | M | 2 | E1-T03b, E1-T04 | done | 6434e40 | AC1-AC6 verified with real tests (scipy refs at 1e-12, Appendix E numbers, covariate zero/nonzero, 3-SE sampler moments, jit+grad, steps-clock); independent review caught a silent cross-series sigma-sharing gap under `constraint=increasing` + `n_series>1`, fixed (now `ConfigError`), plus a test-quality nit (AC2 read family's own `_mean_sd` instead of recomputing), fixed |
 | E3-T02 | Student-t emission | S | 2 | E3-T01 | todo | | |
-| E3-T03 | `DurationFamily` + geometric + negbin | M | 2 | E1-T03b, E1-T04 | done | (pending) | AC1-AC6 verified with real tests (NumPy phase-chain sim vs 3 SE, negbin r=1 == geometric bitwise/1e-12, irregular dt, covariate zero/monotonic, Appendix E 4dp, steps clock + bitwise init_mean_sojourn_steps); independent review found no issues |
+| E3-T03 | `DurationFamily` + geometric + negbin | M | 2 | E1-T03b, E1-T04 | done | 8a172b7 | AC1-AC6 verified with real tests (NumPy phase-chain sim vs 3 SE, negbin r=1 == geometric bitwise/1e-12, irregular dt, covariate zero/monotonic, Appendix E 4dp, steps clock + bitwise init_mean_sojourn_steps); independent review found no issues |
 | E3-T04 | Explicit duration families | M | 2 | E3-T03 | todo | | |
 | E3-T05 | `TransitionModel` (jump, logit link, generator) | M | 2 | E1-T03b | todo | | |
 | E3-T06 | Lattice + ordering + post-sort | S | 2 | E3-T01 | todo | | |
