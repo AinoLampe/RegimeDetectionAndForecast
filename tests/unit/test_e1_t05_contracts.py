@@ -213,16 +213,30 @@ class _StubEmission:
 
 
 class _StubDuration:
+    name = "stub"
+    representation = "phase"
     supports_explicit = True
 
-    def logpmf(self, d: object, theta: object, dt: float, d_max: int) -> object:
+    def param_specs(self, n_states: object, cov_names: object) -> object:
+        return ()
+
+    def n_phases(self, i: object) -> object:
+        return 1
+
+    def advance_prob(self, theta: object, dt: object, z_d: object) -> object:
+        return 0.0
+
+    def advance_prob_t(self, theta: object, dt: float) -> object:
+        return 0.0
+
+    def log_pmf(self, theta: object, d_max: int, nominal_dt: float, z_entry: object) -> object:
+        return 0.0
+
+    def mean_sojourn(self, theta: object, nominal_dt: float) -> object:
         return 0.0
 
     def init_from_mean_sojourn(self, mean_steps: object, nominal_dt: float) -> object:
         return {}
-
-    def advance_prob_t(self, theta: object, dt: float) -> object:
-        return 0.0
 
 
 class _StubTransition:

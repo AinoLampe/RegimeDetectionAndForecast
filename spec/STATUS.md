@@ -27,7 +27,7 @@
 | E2-T09 | tiingo adapter (optional) | S | 2 | E2-T01 | todo | | |
 | E3-T01 | `EmissionFamily` protocol + GBM | M | 2 | E1-T03b, E1-T04 | done | 6434e40 | AC1-AC6 verified with real tests (scipy refs at 1e-12, Appendix E numbers, covariate zero/nonzero, 3-SE sampler moments, jit+grad, steps-clock); independent review caught a silent cross-series sigma-sharing gap under `constraint=increasing` + `n_series>1`, fixed (now `ConfigError`), plus a test-quality nit (AC2 read family's own `_mean_sd` instead of recomputing), fixed |
 | E3-T02 | Student-t emission | S | 2 | E3-T01 | todo | | |
-| E3-T03 | `DurationFamily` + geometric + negbin | M | 2 | E1-T03b, E1-T04 | todo | | |
+| E3-T03 | `DurationFamily` + geometric + negbin | M | 2 | E1-T03b, E1-T04 | done | (pending) | AC1-AC6 verified with real tests (NumPy phase-chain sim vs 3 SE, negbin r=1 == geometric bitwise/1e-12, irregular dt, covariate zero/monotonic, Appendix E 4dp, steps clock + bitwise init_mean_sojourn_steps); independent review found no issues |
 | E3-T04 | Explicit duration families | M | 2 | E3-T03 | todo | | |
 | E3-T05 | `TransitionModel` (jump, logit link, generator) | M | 2 | E1-T03b | todo | | |
 | E3-T06 | Lattice + ordering + post-sort | S | 2 | E3-T01 | todo | | |
@@ -74,25 +74,27 @@ Appendix A; `ParamManager` and `dists` fully tested. `.venv` exists at repo root
 `uv sync --all-groups` works from a clean checkout.
 
 This run (autonomous, budget 5): critical-path Phase 2/3 tickets E3-T01 -> E3-T03 -> E3-T05 -> E4-T02a ->
-E4-T02b. E3-T01 done (see below, commit pending merge). Next up: E3-T03 (`DurationFamily` + geometric +
-negbin), deps E1-T03b/E1-T04 already done.
+E4-T02b. E3-T01, E3-T03 done. Next up: E3-T05 (`TransitionModel`: jump, logit link, generator), dep
+E1-T03b already done. `MemoryLayout` placeholder already exists in `model/transition.py` (E1-T05) for
+E3-T05 to finalize.
 
 ## Blocked / needs owner
 
 ## Spec fixes
 
 ## Findings for the owner
-- E3-T01: `GBMFamily.from_config` maps `EmissionCfg` -> `ParamSpec`s directly in `gbm.py` (private
-  `_spec_from_paramcfg`/`_prior_from_cfg`/`_broadcast_per_state`/`_coef_spec` helpers), per the "every
-  family gets a `from_config`" pattern (CLAUDE.md §3.3). This `ParamCfg -> ParamSpec` mapping (modes,
-  per-state values/init broadcasting, bounds, tie groups, `PriorCfg -> Prior` incl. lognormal's
-  `mean_log = log(init).mean()`) is generic and will very likely be needed near-identically by
-  duration (E3-T03/E3-T04) and transition (E3-T05) families; consider factoring a shared helper into
-  `model/params/` once 2-3 families have duplicated it, rather than before (no shared code was
-  extracted here to avoid guessing the right generalization ahead of a second data point). Only the
-  `mu`/`sigma`/`gamma`/`delta` combination is exercised by E3-T01's tests; edge cases (tied `mu`,
-  `bounded` mode, `PriorCfg` on a `free`-mode param as Appendix A's `sigma` does — see below) get
-  real end-to-end coverage once `ParamManager.log_prior`/MAP estimation runs (E5-T01+).
+- E3-T01/E3-T03: `GBMFamily.from_config` (gbm.py) and `GeometricDuration.from_config`/
+  `NegBinDuration.from_config` (duration/base.py's `prior_from_cfg`/`broadcast_per_state`/
+  `spec_from_paramcfg`/`coef_spec`) now independently reimplement near-identical `ParamCfg ->
+  ParamSpec`/`PriorCfg -> Prior` mapping logic (E3-T03's version is a copy of E3-T01's, adapted to
+  drop the `(N, M)` series dimension and the `increasing`-constraint shape squeeze, since duration
+  params are always `(N,)`). This is now the second data point CLAUDE.md §3.3's "every family gets a
+  `from_config`" pattern predicted would duplicate; transition (E3-T05) will likely be the third.
+  Recommend factoring a shared `ParamCfg -> ParamSpec` helper (e.g. into `model/params/`) once E3-T05
+  lands, rather than now — three concrete implementations give a much better sense of the right
+  generalization (transition's `pi_rows`/simplex domain and per-row Dirichlet prior look like they
+  won't fit the `mu`/`sigma`/`rate`/`c` shape cleanly) than extrapolating from two. Not fixed in this
+  ticket to avoid scope creep beyond "Creates".
 - E3-T01: Appendix A's `model.emission.params.sigma` sets `mode: free` *and* a `prior: {type:
   lognormal, sd: 1.0}` (`tests/fixtures/configs/appendix_a.yaml`), but `ParamManager.log_prior`
   (E1-T03b, already merged) only sums a spec's prior for states where `mode == "prior"` — so a `free`
