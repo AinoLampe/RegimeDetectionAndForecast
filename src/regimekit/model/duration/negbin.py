@@ -78,9 +78,13 @@ class NegBinDuration:
             z, c = None, None
         return advance_prob_core(theta["duration.rate"], dt, c, z)
 
-    def advance_prob_t(self, theta: Params, dt: float) -> Array:
-        """`(N,)` advance probability at a single step, no covariates (E4-T02b builds the full scan)."""
-        return -jnp.expm1(-theta["duration.rate"] * dt)
+    def advance_prob_t(self, theta: Params, dt: Array | float, z_d_t: Array | None = None) -> Array:
+        """`(N,)` advance probability at a single step (E4-T02b's scan-body wrapper of `advance_prob`)."""
+        if z_d_t is not None and self.cov_idx:
+            z, c = z_d_t[jnp.asarray(self.cov_idx)], theta.get("duration.c")
+        else:
+            z, c = None, None
+        return advance_prob_entry(theta["duration.rate"], dt, c, z)
 
     def log_pmf(self, theta: Params, d_max: int, nominal_dt: float, z_entry: Array | None) -> Array:
         """`(N, D_max)` shifted-negative-binomial log-pmf at a constant (entry-time) covariate value."""

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import functools
+
 import jax
 import jax.numpy as jnp
 import numpy as np
@@ -69,21 +71,25 @@ def test_e4_t02a_state_space_jittable() -> None:
 
 
 def test_e4_t02a_state_space_no_recompile_across_equal_layouts() -> None:
-    """Passing two structurally-equal `StateSpace`s as jit args triggers no second trace.
+    """A function static-closing over `MemoryLayout` does not retrace across equal instances.
 
-    Distinct `MemoryLayout` instances; exercises `MemoryLayout.__hash__`/`__eq__`.
+    Two distinct-but-structurally-equal `MemoryLayout` instances exercise its content-based
+    `__hash__`/`__eq__` (CLAUDE.md §5). `StateSpace.transition_fn` (E4-T02b) is a fresh Python
+    closure per `build_expanded` call, so it -- unlike `layout` -- is not expected to compare equal
+    across instances; AC3 for that (E4-T02b) is single-`StateSpace` recompile-freedom, tested in
+    `tests/property/test_e4_t02b_transitions.py`.
     """
     duration = NegBinDuration(r=(2, 3))
     space1 = build_expanded(_spec(2, 1, duration))
     space2 = build_expanded(_spec(2, 1, duration))
     assert space1.layout is not space2.layout
 
-    @jax.jit
-    def f(sp: object) -> jax.Array:
-        return jnp.asarray(sp.n_expanded)  # type: ignore[attr-defined]
+    @functools.partial(jax.jit, static_argnums=0)
+    def f(layout: object) -> jax.Array:
+        return jnp.asarray(layout.n_states)  # type: ignore[attr-defined]
 
-    f(space1)
-    f(space2)
+    f(space1.layout)
+    f(space2.layout)
     assert f._cache_size() == 1
 
 
@@ -126,12 +132,14 @@ def test_e4_t02a_initial_log_rho_free() -> None:
     assert np.all(np.isneginf(log_rho[phase_of != 1]))
 
 
-def test_e4_t02a_initial_log_rho_stationary_not_implemented() -> None:
-    """`stationary` is deferred to E4-T02b."""
+def test_e4_t02a_initial_log_rho_unknown_mode_raises() -> None:
+    """An unrecognized `spec.initial` value raises `ConfigError` (`stationary` is real, E4-T02b)."""
+    from regimekit.utils.errors import ConfigError
+
     duration = NegBinDuration(r=(2, 3))
-    spec = _spec(2, 1, duration, initial="stationary")
+    spec = _spec(2, 1, duration, initial="bogus")
     space = build_expanded(spec)
-    with pytest.raises(NotImplementedError):
+    with pytest.raises(ConfigError):
         initial_log_rho(spec, space, {})
 
 

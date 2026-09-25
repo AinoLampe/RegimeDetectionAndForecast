@@ -5,15 +5,18 @@ Concept refs: §4.5, §4.7.1, Appendix B (`S` formula).
 
 from __future__ import annotations
 
+import dataclasses
 import warnings
 from typing import TYPE_CHECKING
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 
 from regimekit.model.params import Params
 from regimekit.model.transition import MemoryLayout, build_memory_layout
 from regimekit.statespace.index import StateIndex, StateSpace
+from regimekit.statespace.transitions import make_transition_fn
 from regimekit.utils.errors import ConfigError
 from regimekit.utils.typing import Array
 
@@ -40,6 +43,8 @@ def build_expanded(spec: ModelSpec) -> StateSpace:
     phase_of: list[int] = []
     memory_of: list[np.ndarray] = []
     row_of_state: list[int] = []
+    is_last_phase: list[bool] = []
+    next_phase_state: list[int] = []
     row_start = np.empty(r_rows, dtype=np.int64)
 
     s = 0
@@ -52,6 +57,9 @@ def build_expanded(spec: ModelSpec) -> StateSpace:
             phase_of.append(phase)
             memory_of.append(memories[row_idx])
             row_of_state.append(row_idx)
+            last = phase == n_phases
+            is_last_phase.append(last)
+            next_phase_state.append(-1 if last else s + 1)
             s += 1
 
     n_expanded = s
@@ -83,8 +91,9 @@ def build_expanded(spec: ModelSpec) -> StateSpace:
         spec.duration_conditioning, n_states, order, regime_of_arr, memory_of_arr
     )
     phase1_idx = np.flatnonzero(phase_of_arr == 1)
+    exit_targets = entry_state_of[row_of_state_arr, :]  # (S, N), gathered once
 
-    return StateSpace(
+    space = StateSpace(
         index=index,
         layout=layout,
         n_expanded=n_expanded,
@@ -92,7 +101,11 @@ def build_expanded(spec: ModelSpec) -> StateSpace:
         rate_index_of=jnp.asarray(rate_index_of),
         entry_state_of=jnp.asarray(entry_state_of),
         phase1_idx=jnp.asarray(phase1_idx),
+        next_phase_state=jnp.asarray(next_phase_state),
+        is_last_phase=jnp.asarray(is_last_phase),
+        exit_targets=jnp.asarray(exit_targets),
     )
+    return dataclasses.replace(space, transition_fn=make_transition_fn(spec, space))
 
 
 def _build_entry_state_of(
@@ -134,8 +147,33 @@ def _build_rate_index(
     return len(pairs), rate_index_of
 
 
-def initial_log_rho(spec: ModelSpec, space: StateSpace, theta: Params) -> Array:
-    """`(S,)` initial log-probabilities (`-inf` off the `phase == 1` support)."""
+def _stationary_distribution(a_bar: Array, n_iter: int = 500) -> Array:
+    """Power iteration for `A_bar`'s stationary row vector (`pi @ A_bar == pi`).
+
+    Preferred over `jnp.linalg.eig` here: the eigenvector for a general (non-symmetric) matrix is
+    only defined up to an arbitrary sign, so naively `clip(..., min=0)`-ing it zeroes the whole
+    vector (and gives `0/0 = NaN` on normalization) whenever the sign happens to come back
+    negative -- roughly half the time in practice. `jax.grad` through non-symmetric eigenvectors
+    is also unsupported by JAX. Power iteration has neither problem and is fully differentiable.
+    """
+    s = a_bar.shape[0]
+
+    def body(vec: Array, _: None) -> tuple[Array, None]:
+        vec = vec @ a_bar
+        return vec / jnp.sum(vec), None
+
+    vec, _ = jax.lax.scan(body, jnp.full((s,), 1.0 / s), xs=None, length=n_iter)
+    return vec
+
+
+def initial_log_rho(spec: ModelSpec, space: StateSpace, theta: Params, nominal_dt: float = 1.0) -> Array:
+    """`(S,)` initial log-probabilities.
+
+    `uniform`/`free` are `-inf` off the `phase == 1` support. `stationary` is the stationary
+    distribution of the mean transition matrix `A_bar = transition_fn(theta, z=0, nominal_dt)`
+    (restricted to `z = 0`/no-covariate semantics, per the ticket) and spans every state, not just
+    `phase == 1` (the chain starts "already running", not freshly entering a regime).
+    """
     s = space.n_expanded
     phase1_idx = space.phase1_idx
     n_phase1 = phase1_idx.shape[0]
@@ -147,5 +185,11 @@ def initial_log_rho(spec: ModelSpec, space: StateSpace, theta: Params) -> Array:
         log_p = jnp.full((s,), -jnp.inf)
         return log_p.at[phase1_idx].set(jnp.log(probs))
     if spec.initial == "stationary":
-        raise NotImplementedError("initial='stationary' is built by E4-T02b (needs the mean A_t)")
+        # "z = 0" semantics: a zero-valued covariate vector of whatever width theta implies (not
+        # `None`, which the covariate-logit path treats as "no covariates configured" and errors
+        # on a shape mismatch if `transition.b`/`duration.c` are actually present).
+        z_pi0 = jnp.zeros((theta["transition.b"].shape[-1],)) if "transition.b" in theta else None
+        z_d0 = jnp.zeros((theta["duration.c"].shape[-1],)) if "duration.c" in theta else None
+        a_bar, _ = space.transition_fn(theta, z_pi0, z_d0, jnp.asarray(nominal_dt))
+        return jnp.log(_stationary_distribution(a_bar))
     raise ConfigError(f"unknown initial distribution {spec.initial!r}", path="model.initial_state")

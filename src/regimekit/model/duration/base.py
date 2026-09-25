@@ -42,7 +42,7 @@ class DurationFamily(Protocol):
         """`(T, N)` per-step, per-regime phase-advance probability `a_i(t)`."""
         ...
 
-    def advance_prob_t(self, theta: Params, dt: float) -> Array:
+    def advance_prob_t(self, theta: Params, dt: Array | float, z_d_t: Array | None = None) -> Array:
         """Per-step wrapper of `advance_prob` (`(N,)`), for use inside a `jax.lax.scan` body."""
         ...
 
@@ -74,7 +74,9 @@ def advance_prob_core(rate: Array, dt: Array, c: Array | None, z_d: Array | None
     return -jnp.expm1(-rate_t * dt[:, None])
 
 
-def advance_prob_entry(rate: Array, nominal_dt: float, c: Array | None, z_entry: Array | None) -> Array:
+def advance_prob_entry(
+    rate: Array, nominal_dt: Array | float, c: Array | None, z_entry: Array | None
+) -> Array:
     """`(N,)` advance probability at a fixed (entry-time) covariate value `z_entry`."""
     n = rate.shape[0]
     log_rate_adj = c @ z_entry if (c is not None and z_entry is not None) else jnp.zeros((n,))

@@ -32,6 +32,10 @@ def _as_float_array(x: object) -> Array:
     return jnp.asarray(x, dtype=jnp.float64)
 
 
+def _as_bool_array(x: object) -> Array:
+    return jnp.asarray(x, dtype=jnp.bool_)
+
+
 class StateIndex(eqx.Module):
     """Static-content (but dynamically-registered) index arrays for the expanded state space."""
 
@@ -45,7 +49,7 @@ class StateIndex(eqx.Module):
     order: int = eqx.field(static=True)
 
 
-def _not_implemented_transition_fn(*_args: object, **_kwargs: object) -> Array:
+def _not_implemented_transition_fn(*_args: object, **_kwargs: object) -> tuple[Array, Array]:
     """Placeholder `A_t` builder; filled in by E4-T02b."""
     raise NotImplementedError("StateSpace.transition_fn is built by E4-T02b")
 
@@ -59,6 +63,11 @@ class StateSpace(eqx.Module):
     `"pair"`). `entry_state_of (R, N)` is the expanded state (`phase == 1`) entered when regime
     `target` starts from jump-matrix row `r` (`-1` where `target` equals that row's current
     regime). `phase1_idx (S_phase1,)` lists the `phase == 1` states, ascending.
+
+    `next_phase_state (S,)` / `is_last_phase (S,)` / `exit_targets (S, N)` (E4-T02b) are the
+    per-`A_t`-scatter arrays: `next_phase_state[s]` is `s`'s same-regime, phase-advanced state
+    (`-1` at the last phase), `is_last_phase[s]` is `phase_of[s] == n_phases(regime_of[s])`, and
+    `exit_targets[s, :] = entry_state_of[row_of_state[s], :]` (gathered once, not per step).
     """
 
     index: StateIndex
@@ -68,4 +77,9 @@ class StateSpace(eqx.Module):
     rate_index_of: Array = eqx.field(converter=_as_int_array)
     entry_state_of: Array = eqx.field(converter=_as_int_array)
     phase1_idx: Array = eqx.field(converter=_as_int_array)
-    transition_fn: Callable[..., Array] = eqx.field(static=True, default=_not_implemented_transition_fn)
+    next_phase_state: Array = eqx.field(converter=_as_int_array)
+    is_last_phase: Array = eqx.field(converter=_as_bool_array)
+    exit_targets: Array = eqx.field(converter=_as_int_array)
+    transition_fn: Callable[..., tuple[Array, Array]] = eqx.field(
+        static=True, default=_not_implemented_transition_fn
+    )

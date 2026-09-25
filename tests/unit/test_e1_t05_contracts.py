@@ -226,7 +226,7 @@ class _StubDuration:
     def advance_prob(self, theta: object, dt: object, z_d: object) -> object:
         return 0.0
 
-    def advance_prob_t(self, theta: object, dt: float) -> object:
+    def advance_prob_t(self, theta: object, dt: float, z_d_t: object = None) -> object:
         return 0.0
 
     def log_pmf(self, theta: object, d_max: int, nominal_dt: float, z_entry: object) -> object:

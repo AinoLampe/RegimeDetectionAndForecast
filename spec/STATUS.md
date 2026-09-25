@@ -33,7 +33,7 @@
 | E3-T06 | Lattice + ordering + post-sort | S | 2 | E3-T01 | todo | | |
 | E4-T01 | NumPy reference implementations | M | 2 | E1-T04 | todo | | |
 | E4-T02a | `StateIndex` + `build_expanded` | M | 3 | E1-T05, E3-T03, E3-T05 | done | 9256dad | AC1-AC5 verified with real tests (S formula incl. hypothesis property, order-2/3 tuple validity, one-hot collapse + independent reference enumeration, entry_state_of shift correctness, pair conditioning N(N-1) distinct values); independent review found no blocking issues (strengthened one jit test per its minor note: pass StateSpace as an actual jit arg + a no-recompile check, rather than only closing over it) |
-| E4-T02b | Per-step `A_t` builder | M | 3 | E4-T02a | todo | | |
+| E4-T02b | Per-step `A_t` builder | M | 3 | E4-T02a | done | (pending) | AC1-AC5 verified with real tests (row-sum/structural-zero exactness, independent NumPy reference incl. covariates, no-retrace jit, Appendix E golden + stationary `pi A = pi`, finite gradients); independent review caught a real NaN/non-differentiability bug in the initial `jnp.linalg.eig`-based stationary distribution (sign-ambiguous eigenvector -> `0/0` ~50% of the time, plus `jax.grad` unsupported for non-symmetric eigenvectors) -- replaced with power iteration, fixed; also added a `rate_index_of`/`n_rates` shape guard (`DataError`) and fixed `z=0` semantics (zero-vector, not `None`) for the stationary path with covariate-logit transitions, both flagged by the same review |
 | E4-T03a | Expanded engine: forward / loglik | M | 3 | E4-T01, E4-T02b, E3-T01 | todo | | |
 | E4-T03b | Expanded engine: backward / smoothed / `Posterior` | M | 3 | E4-T03a | todo | | |
 | E4-T04 | Augmented posterior utilities | S | 3 | E4-T03b | todo | | |
@@ -73,17 +73,18 @@ Phase 0 and all of Phase 1 (E1-T01 through E1-T05) done. Phase 1 exit criterion 
 Appendix A; `ParamManager` and `dists` fully tested. `.venv` exists at repo root (uv-managed, Python 3.13.13);
 `uv sync --all-groups` works from a clean checkout.
 
-This run (autonomous, budget 5, now exhausted): critical-path tickets E3-T01, E3-T03, E3-T05, E4-T02a all
-done. `.venv` at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a clean checkout.
-`nox -s lint types tests docs` green on `main` after every ticket.
+This run (autonomous, budget 5, now exhausted): critical-path tickets E3-T01, E3-T03, E3-T05, E4-T02a,
+E4-T02b all done. `.venv` at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a
+clean checkout. `nox -s lint types tests docs` green on `main` after every ticket.
 
-Next eligible (critical path, Step 1 order): **E4-T02b** (Per-step `A_t` builder), dep E4-T02a now done.
-E4-T02b's own ticket text (already read during E4-T02a) says to add `advance_prob_t`/`jump_probs_t` "if not
-already present" to the E3-T03/E3-T05 families -- both already exist (added proactively during those
-tickets per CLAUDE.md §3.3), so E4-T02b can use them directly. `StateSpace.transition_fn` is currently a
-`NotImplementedError` placeholder (`statespace/index.py`) for E4-T02b to fill; `initial_log_rho`'s
-`"stationary"` branch (`statespace/builders.py`) also needs `A_t`, deferred there too. After E4-T02b: next
-critical-path tickets are E4-T03a (Expanded engine forward/loglik, needs E4-T01 too) then E4-T03b.
+Next eligible (critical path, Step 1 order): **E4-T03a** (Expanded engine: forward / loglik), deps
+E4-T01 (NumPy reference implementations, still `todo`), E4-T02b (now done), E3-T01 (done). **E4-T01 must
+be done first** -- it is not on this run's critical path list but E4-T03a's own "Depends on" names it, and
+its own AC2 (golden comparison) plus E4-T02a/E4-T02b's already-deferred `tests/reference/ref_expansion.py`
+(see Spec fixes below) both want it. After E4-T01: E4-T03a, then E4-T03b (also newly `todo`-eligible:
+E4-T04, E4-T05 in parallel after E4-T03b). `StateSpace.transition_fn` is now real (`statespace/transitions.py`,
+E4-T02b); `initial_log_rho`'s `"stationary"` branch uses power iteration, not `jnp.linalg.eig` (a NaN/
+non-differentiability bug found and fixed during E4-T02b's review -- see Spec fixes).
 
 ## Blocked / needs owner
 
@@ -103,6 +104,35 @@ critical-path tickets are E4-T03a (Expanded engine forward/loglik, needs E4-T01 
   part of AC4) hold regardless and are unaffected.
 
 ## Findings for the owner
+- E4-T02a/E4-T02b: both tickets' AC2/AC3 name `tests/reference/ref_expansion.py` (owned by E4-T01,
+  still `todo`) as the golden comparison target. Neither ticket depends on E4-T01 per the
+  dependency graph, so each wrote its own independent NumPy reference inline in its property test
+  file instead (`tests/property/test_e4_t02a_builder.py`'s `_ref_expand`,
+  `tests/property/test_e4_t02b_transitions.py`'s `_ref_a`) -- these satisfy the acceptance *intent*
+  (independent re-derivation, compared at the required tolerance) but duplicate logic that
+  `tests/reference/ref_expansion.py` is presumably meant to centralize. When E4-T01 lands, consider
+  either extracting these two inline references into it (so E4-T03a's own golden tests, which do
+  depend on E4-T01, share one canonical implementation) or leaving them as-is if E4-T01's
+  `ref_expansion.py` ends up shaped differently than either inline version assumes.
+- E4-T02b: the ticket's own suggested method for `initial="stationary"` -- `jnp.linalg.eig` on
+  `A_bar.T`, take the eigenvalue closest to 1, clip non-negative, normalize -- has a real bug:
+  a general (non-symmetric) matrix's eigenvector is only defined up to an arbitrary sign, so when
+  `jnp.linalg.eig` happens to return the negated eigenvector, `clip(..., min=0)` zeroes the entire
+  vector and normalizing divides by zero, giving an all-`NaN` initial distribution silently (no
+  `NumericalError`, violating CLAUDE.md §4's "no NaN/Inf leaves a public function"). Reproduced
+  directly: ~11/20 random row-stochastic test matrices triggered it. `jax.grad` through a
+  non-symmetric matrix's eigenvectors is also unsupported by JAX outright (raises
+  `NotImplementedError`), so the ticket's `eig` approach can never be used inside a differentiable
+  objective (E5-T01) regardless. Found by independent review; fixed by switching to power iteration
+  (`_stationary_distribution` in `statespace/builders.py`), which the ticket itself lists as a valid
+  alternative ("computed by eigenvector **or power iteration**") -- no deviation from ticket intent,
+  just the other sanctioned method. Also fixed while there: `rate_index_of`/`advance_prob_t` had no
+  guard against a mis-shaped `theta['duration.rate']` under `duration_conditioning="pair"` (JAX
+  gather silently wraps/aliases out-of-range indices rather than erroring) -- added a trace-time
+  shape check raising `DataError`; and the `stationary` branch passed `z_pi_t=None`/`z_d_t=None` to
+  `transition_fn`, which crashes on a shape mismatch (not silently) whenever covariate-logit
+  transition/duration specs are actually configured -- fixed to pass explicit zero-vectors of the
+  right width instead, matching the documented "z = 0" semantics.
 - E3-T01/E3-T03: `GBMFamily.from_config` (gbm.py) and `GeometricDuration.from_config`/
   `NegBinDuration.from_config` (duration/base.py's `prior_from_cfg`/`broadcast_per_state`/
   `spec_from_paramcfg`/`coef_spec`) now independently reimplement near-identical `ParamCfg ->

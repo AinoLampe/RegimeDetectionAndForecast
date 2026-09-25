@@ -39,8 +39,15 @@ from `s`. `StateSpace` adds:
 
 ## Initial distribution
 
-`initial_log_rho(spec, space, theta) -> (S,)` is `-inf` everywhere except `phase == 1` states: `uniform`
-puts equal mass `1 / S_phase1` there; `free` scatters the `initial.logits` spec's constrained `simplex_ref`
-values (already probabilities, not raw logits, by the time `ParamManager` hands them to `theta`) onto the
-same support. `stationary` (the mean `A_t`'s stationary distribution) needs `A_t`, so it is deferred to
-E4-T02b.
+`initial_log_rho(spec, space, theta, nominal_dt) -> (S,)` is `-inf` everywhere except `phase == 1` states:
+`uniform` puts equal mass `1 / S_phase1` there; `free` scatters the `initial.logits` spec's constrained
+`simplex_ref` values (already probabilities, not raw logits, by the time `ParamManager` hands them to
+`theta`) onto the same support. `stationary` (E4-T02b) is the stationary distribution of
+`A_bar = transition_fn(theta, z=0, nominal_dt)`, spanning every state (not just `phase == 1` — the chain
+starts "already running"), found by power iteration on `A_bar` (`pi_{k+1} = normalize(pi_k A_bar)`) rather
+than `jnp.linalg.eig`: a general matrix's eigenvector is only defined up to an arbitrary sign, so naively
+clipping it non-negative zeroes the whole vector (`0/0 = NaN` on normalizing) whenever the sign comes back
+negative, and `jax.grad` through non-symmetric eigenvectors is unsupported by JAX. Power iteration has
+neither problem and is fully differentiable, at the cost of a fixed iteration count (500) rather than an
+exact closed form; `π A_bar = π` still holds within tolerance for the well-conditioned, aperiodic chains
+this domain produces.
