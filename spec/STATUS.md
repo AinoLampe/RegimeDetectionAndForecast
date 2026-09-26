@@ -69,25 +69,19 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-Phase 0 and all of Phase 1 (E1-T01 through E1-T05) done. Phase 1 exit criterion met: config schema validates
-Appendix A; `ParamManager` and `dists` fully tested. `.venv` exists at repo root (uv-managed, Python 3.13.13);
-`uv sync --all-groups` works from a clean checkout.
+No ticket in progress; `main` is clean and `nox -s lint types tests docs` is green (533 passed, 1 skipped = the
+opt-in live yfinance test, coverage 97.8 %).
 
-This run (autonomous, budget 5, now exhausted): critical-path tickets E3-T01, E3-T03, E3-T05, E4-T02a,
-E4-T02b all done. `.venv` at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a
-clean checkout. `nox -s lint types tests docs` green on `main` after every ticket.
+Run 2026-09-26 (budget 3): E2-T01, E2-T02, E2-T03 done (finance providers: protocol/registry/csv, yfinance,
+stooq). Step 1 ordering was applied strictly (lowest phase first), so remaining Phase 2 tickets come before
+E4-T03a even though the previous handoff named E4-T03a next.
 
-E4-T01 also now done: `tests/reference/{ref_hmm,ref_hsmm,ref_expansion,ref_dists}.py` +
-`test_reference_selftests.py`, pure NumPy/SciPy, no `regimekit`/`jax` import anywhere in that
-directory (CLAUDE.md §6). `ref_expansion.build_expanded_a` is available for E4-T02a/E4-T02b's
-deferred golden comparison (see Findings) whenever someone wants to add it retroactively.
+Next eligible, in Step 1 order: E2-T04 (fred + cboe), E2-T09 (tiingo), E2-T05 (cache; deps E2-T01 only),
+E2-T06 (calendar; adds `future_grid`/`is_irregular` to `utils/clock.py`), E2-T07, E3-T02, E3-T04, E3-T06;
+then Phase 3 E4-T03a (critical path) -> E4-T03b. E4-T06a needs E3-T04 first.
 
-Next eligible (critical path, Step 1 order): **E4-T03a** (Expanded engine: forward / loglik), deps
-E4-T01 (done), E4-T02b (done), E3-T01 (done) -- all satisfied. After E4-T03a: E4-T03b, then (in
-parallel) E4-T04/E4-T05. `StateSpace.transition_fn` is real (`statespace/transitions.py`, E4-T02b);
-`initial_log_rho`'s `"stationary"` branch uses power iteration, not `jnp.linalg.eig` (a NaN/
-non-differentiability bug found and fixed during E4-T02b's review -- see Spec fixes). E4-T03a's own
-golden tests should compare against `tests/reference/ref_hmm.py` (built this run) directly.
+Environment note: at session start `.venv` pointed at a missing uv-managed interpreter; `uv sync --all-groups`
+repaired it. pandas is 3.x here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`).
 
 ## Blocked / needs owner
 
@@ -295,6 +289,9 @@ golden tests should compare against `tests/reference/ref_hmm.py` (built this run
   here; the first fragment will land with the first ticket that ships real behavior.
 
 ## Follow-ups
+- E2-T05: providers return `snapshot_id=""` and the cache fills it; `CacheableProvider` Protocol goes in `data/cache.py` (CLAUDE.md §3.2). `DataProvider` (finance/providers/base.py) is the structural match.
+- E2-T04/E2-T09: reuse `with_retries`, `throttle`, `clip_window`, `infer_frequency` from `finance/providers/base.py`; follow the injectable-downloader + parquet-cassette pattern of E2-T02/T03 (`tests/fixtures/cassettes/<provider>/make_cassettes.py`). `check_price_contract`/`check_series_contract` live in `tests/finance/provider_contract.py`.
+- `with_retries` retries every `ProviderError`, including non-transient ones raised by a downloader (e.g. HTTP 403 from a bad stooq key costs 5 attempts with backoff). Consider a non-retryable subclass if this matters in practice.
 
 ## Needs CI / network / GPU
 - E0-T03 AC1: "PR pipeline completes in < 10 minutes on the skeleton" needs a real GitHub Actions run (no
