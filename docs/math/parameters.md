@@ -65,3 +65,20 @@ transform of the corresponding `N` `u` coordinates, not `N` independent scalar t
 `prior` entry (`cell_size - 1` for `simplex_ref`/`pmf` cells, since those bijectors have one fewer
 free coordinate than output dimension), `cell_size` once per distinct `tie_group`, `0` for `fixed`,
 and `N` for an `increasing` spec's whole state axis.
+
+## Identifiability helpers (`model/lattice.py`, E3-T06)
+
+Regime labels are only identified up to permutation; three helpers guard against label switching:
+
+- **Lattice.** `lattice.build({"mu": [...], "sigma": [...]})` takes the Cartesian product of the grids
+  (first grid varies slowest): `n_states = \prod |grid|`, with `to_param_cfgs()` giving `mode: fixed` configs
+  that override `model.emission.params`. `validate_lattice(cfg)` checks `model.n_states` against the product.
+- **Ordering.** `apply_ordering(specs, "emission.sigma")` sets `constraint: increasing` (single series only).
+- **Post-sorting.** `post_sort_states(theta, spec, by="emission.sigma")` relabels a fitted `\theta` so `by` is
+  ascending and returns `(theta_sorted, perm)` with `perm[new] = old`. Emission and duration blocks are
+  gathered along the state axis (pair-conditioned duration rates by the `(previous, current)` pair);
+  transition blocks along memory-tuple rows and target columns. Transition logits (`a`, `b`) are defined
+  relative to a reference target (the smallest `j \ne i`), which relabelling changes, so they are re-derived
+  by subtracting the new reference's logit; `jump_probs` is invariant up to the permutation.
+- `has_identifiability_guard(spec)` is true when some spec is `increasing`, or when every location/scale
+  emission spec (`mu`, `sigma`, `m`, `s`) is `fixed`.
