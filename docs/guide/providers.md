@@ -103,3 +103,34 @@ uses only the Python standard library, so no extra dependency is needed and the 
 
 !!! warning "Terms of service"
     Tiingo data is licensed for the account holder's own use under tiingo.com's terms; do not redistribute it.
+
+## Local cache, snapshots and offline replay
+
+`regimekit.data.cache.CachedProvider` wraps a provider (the `fetch` command wires it up) and stores what was
+fetched as parquet under `data.cache.dir` (default `~/.cache/regimekit`, `~` expanded):
+
+```text
+<cache_dir>/<provider>/<symbols>_<interval>_<adj|raw>.parquet      # prices (symbols joined by "+")
+<cache_dir>/<provider>/series_<series_id>.parquet                  # covariates
+<name>.meta.json                                                   # snapshot_id, fetched_at, versions, request
+<name>.<snapshot_id>.parquet (+ .meta.json)                        # older generations
+```
+
+- **Snapshot ids.** `snapshot_id = sha256(provider | symbols | interval | adjusted | parquet bytes)` (covariates:
+  `sha256(provider | series_id | parquet bytes)`). Parquet is written with fixed options, so identical data
+  gives identical ids on any machine with the same pyarrow version (recorded in the meta file). Adapters
+  return an empty `snapshot_id`; the cache fills it, and prepared datasets and result bundles record it.
+- **`snapshot: latest`** serves the cached entry while it is younger than `max_age_days` (default 1 day;
+  `0` always refetches) and its request window covers the one asked for; otherwise it refetches. When the
+  refetched data differs, the previous generation is kept as `<name>.<old_id>.parquet`.
+- **`snapshot: <id>`** serves exactly that generation, never calls the provider, and raises `DataError` if the
+  generation is missing or does not cover the requested window.
+- **Offline** (`--offline`): the provider is never called; a missing entry raises
+  `DataError("... run `regimekit fetch` first")`.
+- Results are always read back from the cache, so an online run and a later offline replay of the same
+  request are bitwise identical. For `1h`/`1d`, a narrower window than the cached one is served by
+  clipping; for resampled `1wk`/`1mo` bars (whose last bar depends on where the window ends) only the
+  identical window is a hit.
+- Each meta file records the exact request key, so two requests whose file names collide (unsafe
+  characters become `_`; case-insensitive file systems) never serve each other's data.
+- Older generations are never deleted automatically; remove `<name>.<id>.parquet` files you no longer need.
