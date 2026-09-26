@@ -25,6 +25,7 @@ per call. Full `(T, N, D_max)` tables are returned, so `T * N * D_max > 5e7` rai
 from __future__ import annotations
 
 import warnings
+from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING, NamedTuple
 
@@ -33,6 +34,7 @@ import jax.numpy as jnp
 
 from regimekit.engine.base import Posterior
 from regimekit.engine.expanded_hmm import _check_finite, _check_posterior, _regime_log_emis, _safe_logsumexp
+from regimekit.statespace.index import StateIndex
 from regimekit.utils.clock import is_irregular
 from regimekit.utils.errors import ConfigError, NumericalError
 from regimekit.utils.typing import Array
@@ -44,6 +46,7 @@ if TYPE_CHECKING:
     from regimekit.statespace.index import StateSpace
 
 MAX_CELLS = 5e7
+_AUTO_CHUNK = 1024
 _NEG_INF = -jnp.inf
 
 
@@ -97,14 +100,31 @@ def _log_rho(spec: ModelSpec, theta: Params) -> Array:
     )
 
 
-def _prepare(theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> _Inputs:
-    """Validate the call (once per public method) and build the recursion inputs."""
-    t_len, n, d = data.observations.shape[0], spec.n_states, spec.d_max
-    if t_len * n * d > MAX_CELLS:
+def _cells(spec: ModelSpec, data: PreparedDataset) -> int:
+    """`T * N * D_max`, the size of a full `(T, N, D_max)` table."""
+    return int(data.observations.shape[0] * spec.n_states * spec.d_max)
+
+
+def _has_entry_covariates(spec: ModelSpec, data: PreparedDataset) -> bool:
+    z_d = data.cov_duration
+    return bool(z_d is not None and z_d.shape[-1] > 0 and getattr(spec.duration, "cov_idx", ()))
+
+
+def _prepare(
+    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, *, full_tables: bool
+) -> _Inputs:
+    """Validate the call (once per public method) and build the recursion inputs.
+
+    `full_tables` is set by calls that return `(T, N, D_max)` tables; the others only need `(T, N)`
+    arrays unless entry-time duration covariates make the pmf itself `(T, N, D_max)`.
+    """
+    cells = _cells(spec, data)
+    if cells > MAX_CELLS and (full_tables or _has_entry_covariates(spec, data)):
         raise NumericalError(
-            f"T*N*D_max = {t_len * n * d:.3g} > {MAX_CELLS:.0e}: use chunked scan", path="model.d_max"
+            f"T*N*D_max = {cells:.3g} > {MAX_CELLS:.0e}: use chunked scan (estimation.chunk_size)",
+            path="model.d_max",
         )
-    if space.index.n_expanded != n * d:
+    if space.index.n_expanded != spec.n_states * spec.d_max:
         raise ConfigError(
             "state space does not match the explicit engine; build it with build_explicit(spec)",
             path="model.engine",
@@ -202,56 +222,85 @@ def _backward(inp: _Inputs, term: Array) -> tuple[Array, Array]:
     return beta, cont[0]
 
 
-class _Tables(NamedTuple):
-    log_alpha: Array  # (T, S)
-    log_beta: Array  # (T, S)
-    smoothed: Array  # (T, S)
-    loglik: Array  # 0-d
+def _h_ext(inp: _Inputs, beta: Array) -> Array:
+    """`(T + D, N)`: `H = C + B` per boundary, `-inf` past the last boundary."""
+    t_len, n, d_max = inp.cum.shape[0] - 1, inp.log_pmf.shape[-2], inp.log_pmf.shape[-1]
+    return jnp.concatenate([inp.cum[:t_len] + beta, jnp.full((d_max, n), _NEG_INF)], axis=0)
 
 
-def _elapsed_index(t_len: int, d_max: int) -> tuple[Array, Array, Array]:
-    """`(start_c (T, 1, D), valid (T, 1, D), e (1, D))`: start of the segment covering `t` at elapsed `e`."""
+def _chunk(
+    inp: _Inputs, inner: Array, g: Array, term: Array, h_ext: Array, loglik: Array, a: Array | int, c: int
+) -> tuple[Array, Array]:
+    """Filtered and smoothed `(regime, elapsed)` tables for steps `t = a .. a+c-1`: two `(c, N, D)` arrays.
+
+    Only the `c + D - 1` segment starts that can cover those steps are touched, so a chunk costs
+    `O((c + D) N D)` memory whatever `T` is. `log_alpha` is `-inf` and `smoothed` 0 where the
+    elapsed count is impossible (`e > t + 1`) or `t >= T` (last, padded chunk).
+    """
+    cum, lp = inp.cum, inp.log_pmf
+    t_len, n, d_max = cum.shape[0] - 1, lp.shape[-2], lp.shape[-1]
+    span = c + d_max - 1
+    s = a - d_max + 1 + jnp.arange(span)  # segment starts touched by this chunk
+    in_range = ((s >= 0) & (s <= t_len - 1))[:, None, None]
+    sc = jnp.clip(s, 0, t_len - 1)
+    lp_s = lp[sc] if lp.ndim == 3 else lp[None]
+    surv_s = _log_survival(lp_s)
+
+    h_gather = h_ext[sc[:, None] + jnp.arange(1, d_max + 1)[None, :]]  # (span, D, N)
+    closed = inner[sc][:, :, None] - cum[sc][:, :, None] + lp_s + jnp.swapaxes(h_gather, 1, 2)
+    final = (inner[sc] + term[sc])[:, :, None]
+    weight = _logaddexp(jax.lax.cumlogsumexp(closed, axis=2, reverse=True), final)  # (span, N, D)
+    weight = jnp.where(in_range, weight, _NEG_INF)
+    alpha_part = jnp.where(in_range, g[sc][:, :, None] + surv_s, _NEG_INF)
+
+    u = jnp.arange(c)[:, None]
     e = jnp.arange(1, d_max + 1)[None, :]
-    start = jnp.arange(t_len)[:, None] - e + 1
-    return jnp.clip(start, 0, t_len - 1)[:, None, :], (start >= 0)[:, None, :], e
-
-
-def _log_alpha(inp: _Inputs, g: Array) -> Array:
-    """`(T, N, D)`: `log P(y_{1:t}, j, e) = G[s, j] + log S_s[j, e] + C[t+1, j]`, `s = t-e+1`."""
-    cum, lp = inp.cum, inp.log_pmf
-    t_len, n, d_max = cum.shape[0] - 1, lp.shape[-2], lp.shape[-1]
-    start_c, valid, e = _elapsed_index(t_len, d_max)
+    local = (u + d_max - e)[:, None, :]  # index into the touched starts of s = t - e + 1
+    t = a + u  # (c, 1)
+    valid = ((t < t_len) & (t - e + 1 >= 0))[:, None, :]
     jn = jnp.arange(n)[None, :, None]
-    surv = _log_survival(lp)
-    surv_at = surv[start_c, jn, (e - 1)[None]] if surv.ndim == 3 else surv[None]
-    log_alpha = g[start_c, jn] + surv_at + cum[1:][:, :, None]
-    return jnp.where(valid, log_alpha, _NEG_INF)
-
-
-def _tables(inp: _Inputs, inner: Array, g: Array, term: Array, beta: Array, loglik: Array) -> _Tables:
-    """Filtered, backward and smoothed `(regime, elapsed)` tables, all `(T, N * D_max)` (regime-major)."""
-    cum, lp = inp.cum, inp.log_pmf
-    t_len, n, d_max = cum.shape[0] - 1, lp.shape[-2], lp.shape[-1]
-    start_c, valid, e = _elapsed_index(t_len, d_max)
-    jn = jnp.arange(n)[None, :, None]
-    log_alpha = _log_alpha(inp, g)
-
-    # smoothed: mass of all segments starting at s in regime j with duration >= e (+ the final segment)
-    h_ext = jnp.concatenate([cum[:t_len] + beta, jnp.full((d_max, n), _NEG_INF)], axis=0)
-    h_gather = h_ext[jnp.arange(t_len)[:, None] + jnp.arange(1, d_max + 1)[None, :]]  # (T, D, N)
-    lp_full = lp if lp.ndim == 3 else lp[None]
-    closed = inner[:, :, None] - cum[:t_len][:, :, None] + lp_full + jnp.swapaxes(h_gather, 1, 2)
-    final = (inner + term)[:, :, None]
-    weight = _logaddexp(jax.lax.cumlogsumexp(closed, axis=2, reverse=True), final)  # (T, N, D)
-    log_elapsed = weight[start_c, jn, (e - 1)[None]]
+    ek = (e - 1)[None]
+    log_elapsed = weight[local, jn, ek]
+    log_alpha = alpha_part[local, jn, ek] + cum[jnp.minimum(t[:, 0] + 1, t_len)][:, :, None]
     finite = valid & jnp.isfinite(log_elapsed)
     smoothed = jnp.where(finite, jnp.exp(jnp.where(finite, log_elapsed - loglik, 0.0)), 0.0)
+    return jnp.where(valid, log_alpha, _NEG_INF), smoothed
 
+
+def _beta_from(log_alpha: Array, smoothed: Array, loglik: Array) -> Array:
+    """`log_beta = log(smoothed) + loglik - log_alpha` where both are finite (else `-inf`)."""
     log_gamma = jnp.where(smoothed > 0, jnp.log(jnp.where(smoothed > 0, smoothed, 1.0)) + loglik, _NEG_INF)
-    has_both = jnp.isfinite(log_gamma) & jnp.isfinite(log_alpha)
-    log_beta = jnp.where(has_both, jnp.where(has_both, log_gamma - log_alpha, 0.0), _NEG_INF)
+    ok = jnp.isfinite(log_gamma) & jnp.isfinite(log_alpha)
+    return jnp.where(ok, jnp.where(ok, log_gamma - log_alpha, 0.0), _NEG_INF)
+
+
+def _full_tables(
+    inp: _Inputs, inner: Array, g: Array, term: Array, beta: Array, loglik: Array
+) -> tuple[Array, Array, Array]:
+    """`(log_alpha, log_beta, smoothed)`, all `(T, N * D_max)` (regime-major state order)."""
+    t_len, n, d_max = inp.cum.shape[0] - 1, inp.log_pmf.shape[-2], inp.log_pmf.shape[-1]
+    log_alpha, smoothed = _chunk(inp, inner, g, term, _h_ext(inp, beta), loglik, 0, t_len)
+    log_beta = _beta_from(log_alpha, smoothed, loglik)
     flat = (t_len, n * d_max)
-    return _Tables(log_alpha.reshape(flat), log_beta.reshape(flat), smoothed.reshape(flat), loglik)
+    return log_alpha.reshape(flat), log_beta.reshape(flat), smoothed.reshape(flat)
+
+
+def _regime_tables(
+    inp: _Inputs, inner: Array, g: Array, term: Array, beta: Array, loglik: Array, chunk: int
+) -> tuple[Array, Array, Array]:
+    """`(log_alpha, log_beta, smoothed)` collapsed over elapsed, `(T, N)`, in chunks of `chunk` steps."""
+    t_len = inp.cum.shape[0] - 1
+    h_ext = _h_ext(inp, beta)
+    n_chunks = -(-t_len // chunk)
+
+    def one(a: Array) -> tuple[Array, Array]:
+        log_alpha, smoothed = _chunk(inp, inner, g, term, h_ext, loglik, a, chunk)
+        return _safe_logsumexp(log_alpha, axis=2), jnp.sum(smoothed, axis=2)
+
+    log_alpha, smoothed = jax.lax.map(one, jnp.arange(n_chunks) * chunk)
+    n = smoothed.shape[-1]
+    log_alpha, smoothed = log_alpha.reshape(-1, n)[:t_len], smoothed.reshape(-1, n)[:t_len]
+    return log_alpha, _beta_from(log_alpha, smoothed, loglik), smoothed
 
 
 @partial(jax.jit, static_argnames=("spec",))
@@ -267,39 +316,157 @@ def _forward_core(
 ) -> tuple[Array, Array]:
     inp = _build_inputs(theta, spec, space, data)
     inner, g = _forward(inp)
-    log_alpha = _log_alpha(inp, g)
-    return log_alpha.reshape(log_alpha.shape[0], -1), _loglik(inner, _terminal(inp))
+    term = _terminal(inp)
+    t_len, n, d_max = inp.cum.shape[0] - 1, inp.log_pmf.shape[-2], inp.log_pmf.shape[-1]
+    h_ext = jnp.full((t_len + d_max, n), _NEG_INF)  # the filter does not need the backward pass
+    log_alpha, _ = _chunk(inp, inner, g, term, h_ext, jnp.zeros(()), 0, t_len)
+    return log_alpha.reshape(t_len, n * d_max), _loglik(inner, term)
 
 
-@partial(jax.jit, static_argnames=("spec",))
+@partial(jax.jit, static_argnames=("spec", "chunk"))
 def _forward_backward_core(
-    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
+    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset, chunk: int | None = None
 ) -> tuple[Array, Array, Array, Array, Array]:
+    """`(log_alpha, log_beta, smoothed, loglik, loglik_backward)`; `(T, S)` tables, `(T, N)` if `chunk`."""
     inp = _build_inputs(theta, spec, space, data)
     inner, g = _forward(inp)
     term = _terminal(inp)
     loglik = _loglik(inner, term)
     beta, cont0 = _backward(inp, term)
     loglik_b = _safe_logsumexp(inp.log_rho + cont0, axis=0)
-    tab = _tables(inp, inner, g, term, beta, loglik)
-    return tab.log_alpha, tab.log_beta, tab.smoothed, loglik, loglik_b
+    if chunk is None:
+        log_alpha, log_beta, smoothed = _full_tables(inp, inner, g, term, beta, loglik)
+    else:
+        log_alpha, log_beta, smoothed = _regime_tables(inp, inner, g, term, beta, loglik, chunk)
+    return log_alpha, log_beta, smoothed, loglik, loglik_b
 
 
+class _ViterbiTables(NamedTuple):
+    inner: Array  # (T, N) best log-score of a segment starting at each boundary
+    pred: Array  # (T, N) regime before a segment starting at s in regime j (-1 at s = 0)
+    start_of: Array  # (T, N) start boundary of the best segment ending at t in regime j
+
+
+def _viterbi_forward(inp: _Inputs) -> _ViterbiTables:
+    """Max-product twin of `_forward`, keeping the argmax start of every pending segment end.
+
+    Ties break to the shortest duration (later start wins on `>=`) and the lowest previous regime,
+    as `ref_hsmm.segmental_viterbi` does.
+    """
+    cum, lp = inp.cum, inp.log_pmf
+    t_len, n, d_max = cum.shape[0] - 1, lp.shape[-2], lp.shape[-1]
+
+    def scatter(pend: Array, arg: Array, g: Array, lp_s: Array, s: Array | int) -> tuple[Array, Array]:
+        shifted = jnp.concatenate([pend[1:], jnp.full((1, n), _NEG_INF)], axis=0)
+        shifted_arg = jnp.concatenate([arg[1:], jnp.zeros((1, n), arg.dtype)], axis=0)
+        new = g[None, :] + lp_s.T  # (D, N): the start at s ends at s + d
+        take = new >= shifted
+        return jnp.where(take, new, shifted), jnp.where(take, jnp.asarray(s, arg.dtype), shifted_arg)
+
+    pend0 = jnp.full((d_max, n), _NEG_INF)
+    arg0 = jnp.zeros((d_max, n), jnp.int32)
+    pend1, arg1 = scatter(pend0, arg0, inp.log_rho, _at(lp, 0), 0)
+
+    dummy = jnp.zeros((t_len - 1,))
+    xs = (
+        jnp.arange(1, t_len),
+        cum[1:t_len],
+        inp.log_pi[1:] if inp.log_pi.ndim == 3 else dummy,
+        lp[1:] if lp.ndim == 3 else dummy,
+    )
+
+    def body(
+        carry: tuple[Array, Array], s_in: tuple[Array, Array, Array, Array]
+    ) -> tuple[tuple[Array, Array], tuple[Array, Array, Array]]:
+        pend, arg = carry
+        s, c_s, pi_x, lp_x = s_in
+        log_pi_s = pi_x if inp.log_pi.ndim == 3 else inp.log_pi
+        scores = (c_s + pend[0])[:, None] + log_pi_s  # best segment ending at s in i, then jump to j
+        pred = jnp.argmax(scores, axis=0).astype(jnp.int32)
+        inner = jnp.max(scores, axis=0)
+        carry = scatter(pend, arg, inner - c_s, lp_x if lp.ndim == 3 else lp, s)
+        return carry, (inner, pred, arg[0])
+
+    _, (inner_rest, pred_rest, start_rest) = jax.lax.scan(body, (pend1, arg1), xs)
+    return _ViterbiTables(
+        jnp.concatenate([inp.log_rho[None, :], inner_rest], axis=0),
+        jnp.concatenate([jnp.full((1, n), -1, jnp.int32), pred_rest], axis=0),
+        jnp.concatenate([jnp.zeros((1, n), jnp.int32), start_rest], axis=0),
+    )
+
+
+def _viterbi_impl(inp: _Inputs) -> tuple[Array, Array]:
+    """`(state path (T,), best log-probability)`; state `j * D_max + (e - 1)`."""
+    t_len, n, d_max = inp.cum.shape[0] - 1, inp.log_pmf.shape[-2], inp.log_pmf.shape[-1]
+    tables = _viterbi_forward(inp)
+    final = tables.inner + _terminal(inp)  # (T, N): the last segment starts at s in regime j
+    # first maximum over (regime, then shortest duration = latest start), as the reference
+    flat = final.T[:, ::-1].reshape(-1)
+    k = jnp.argmax(flat)
+    j_last, s_last = k // t_len, t_len - 1 - k % t_len
+
+    def back(carry: tuple[Array, Array], t: Array) -> tuple[tuple[Array, Array], Array]:
+        j, s0 = carry
+        state = (j * d_max + (t - s0)).astype(jnp.int32)  # elapsed - 1 = t - s0
+        prev = jnp.maximum(tables.pred[s0, j], 0)
+        switch = t == s0
+        s_prev = tables.start_of[s0, prev]
+        return (jnp.where(switch, prev, j), jnp.where(switch, s_prev, s0)), state
+
+    _, path = jax.lax.scan(
+        back, (j_last.astype(jnp.int32), s_last.astype(jnp.int32)), jnp.arange(t_len - 1, -1, -1)
+    )
+    del n
+    return path[::-1], jnp.max(flat)
+
+
+@partial(jax.jit, static_argnames=("spec",))
+def _viterbi_core(
+    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
+) -> tuple[Array, Array]:
+    return _viterbi_impl(_build_inputs(theta, spec, space, data))
+
+
+def _regime_index(n_states: int) -> StateIndex:
+    """`StateIndex` of the elapsed-collapsed posterior (`S = N`, `phase == 1`), used in chunked mode."""
+    eye = jnp.eye(n_states)
+    return StateIndex(
+        regime_of=jnp.arange(n_states),
+        phase_of=jnp.ones((n_states,), dtype=jnp.int64),
+        memory_of=jnp.zeros((n_states, 0), dtype=jnp.int64),
+        collapse=eye,
+        row_of_state=jnp.arange(n_states),
+        n_expanded=n_states,
+        n_states=n_states,
+        order=1,
+    )
+
+
+@dataclass(frozen=True)
 class ExplicitDurationEngine:
-    """HSMM inference with explicit sojourn pmfs (`engine == "explicit"`); state `(regime, elapsed)`."""
+    """HSMM inference with explicit sojourn pmfs (`engine == "explicit"`); state `(regime, elapsed)`.
+
+    `chunk_size` (`estimation.chunk_size`) bounds memory: with `None`, `forward_backward` returns the
+    full `(T, N * D_max)` posterior while `T * N * D_max <= 5e7` and otherwise switches to chunks of
+    `max(D_max, 1024)` steps; an explicit value always chunks. A chunked `Posterior` is collapsed over
+    the elapsed count: `(T, N)` arrays, `index.n_expanded == N`, `phase_of == 1`, so `regime_*` work and
+    `elapsed_posterior()` is trivial. `loglik` and `viterbi` never allocate `(T, N, D_max)` tables.
+    """
+
+    chunk_size: int | None = None
 
     def forward(
         self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
     ) -> tuple[Array, Array]:
         """`(log_alpha (T, N * D_max), loglik)`; `loglik` is the right-censored 0-d log-likelihood."""
-        _prepare(theta, spec, space, data)
+        _prepare(theta, spec, space, data, full_tables=True)
         log_alpha, loglik = _forward_core(theta, spec, space, data)
         _check_finite(loglik)
         return log_alpha, loglik
 
     def loglik(self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
         """`log p(y_1:T)`, differentiable w.r.t. `theta`."""
-        _prepare(theta, spec, space, data)
+        _prepare(theta, spec, space, data, full_tables=False)
         loglik: Array = _loglik_core(theta, spec, space, data)
         _check_finite(loglik)
         return loglik
@@ -307,18 +474,39 @@ class ExplicitDurationEngine:
     def forward_backward(
         self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
     ) -> Posterior:
-        """Posterior over `(regime, elapsed)`; `Posterior.engine == "explicit"`."""
-        _prepare(theta, spec, space, data)
-        log_alpha, log_beta, smoothed, loglik, _ = _forward_backward_core(theta, spec, space, data)
+        """Posterior over `(regime, elapsed)`, or over regimes when chunked; `engine == "explicit"`."""
+        chunk = self.chunk_size
+        if chunk is None and _cells(spec, data) > MAX_CELLS:
+            chunk = max(spec.d_max, _AUTO_CHUNK)
+        if chunk is not None and chunk < 1:
+            raise ConfigError("chunk_size must be >= 1", path="estimation.chunk_size")
+        _prepare(theta, spec, space, data, full_tables=chunk is None)
+        log_alpha, log_beta, smoothed, loglik, _ = _forward_backward_core(theta, spec, space, data, chunk)
         _check_posterior(log_alpha, log_beta, smoothed, loglik)
         return Posterior(
             log_alpha=log_alpha,
             log_beta=log_beta,
             smoothed=smoothed,
             loglik=loglik,
-            index=space.index,
+            index=space.index if chunk is None else _regime_index(spec.n_states),
             engine="explicit",
         )
+
+    def viterbi(self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
+        """Most likely `(regime, elapsed)` path `(T,)`: state `j * D_max + e - 1`, censored last segment.
+
+        The regime path is `space.index.regime_of[path]` and the elapsed count `space.index.phase_of[path]`.
+
+        Raises:
+            NumericalError: if the best segmentation has non-finite log-probability.
+        """
+        _prepare(theta, spec, space, data, full_tables=False)
+        path: Array
+        best: Array
+        path, best = _viterbi_core(theta, spec, space, data)
+        if not isinstance(best, jax.core.Tracer) and not bool(jnp.isfinite(best)):
+            raise NumericalError("non-finite best-path log-probability in Viterbi", path="viterbi")
+        return path
 
     def approx(self) -> None:
         """No approximate-inference plug-in (FR-X01 hook)."""

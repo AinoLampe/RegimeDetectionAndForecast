@@ -14,13 +14,14 @@ from tests.reference.ref_hsmm import _cum_log_emis, _seg_loglik
 
 def brute_force_by_start(
     log_rho: np.ndarray, log_pi_t: np.ndarray, log_pmf_t: np.ndarray, log_emis: np.ndarray
-) -> tuple[float, np.ndarray]:
+) -> tuple[float, np.ndarray, np.ndarray]:
     """Enumeration reference with per-segment-start jump matrix and duration pmf (entry-time covariates).
 
     `log_pi_t (T, N, N)` and `log_pmf_t (T, N, D_max)` are indexed by the step at which a segment
     starts (`log_pi_t[s][i, j]` is the jump `i -> j` that begins a segment at `s`; row `0` is unused,
     `log_rho` starts the first segment). The last segment is right-censored (survival of its own start
-    row). Returns `(loglik, elapsed (T, N, D_max))` with `elapsed[t, j, e-1] = P(z_t = j, elapsed = e | y)`.
+    row). Returns `(loglik, elapsed (T, N, D_max), best regime path (T,))`, where
+    `elapsed[t, j, e-1] = P(z_t = j, elapsed = e | y)`.
     """
     t_len, n_states = log_emis.shape
     d_max = log_pmf_t.shape[2]
@@ -56,4 +57,8 @@ def brute_force_by_start(
         for start, j, length in segs:
             for k in range(length):
                 elapsed[start + k, j, min(k, d_max - 1)] += weight
-    return loglik, elapsed
+    best = bookkeeping[int(np.argmax(log_weights))]
+    path = np.zeros(t_len, dtype=np.int64)
+    for start, j, length in best:
+        path[start : start + length] = j
+    return loglik, elapsed, path

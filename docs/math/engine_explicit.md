@@ -54,8 +54,38 @@ State $s = j D_{\max} + (e - 1)$ (`statespace.builders.build_explicit`). The `Po
 * `smoothed[t, (j, e)]` the elapsed posterior (`Posterior.elapsed_posterior()` is the `(T, N, D_max)` view),
 * `log_beta = log(smoothed) + loglik - log_alpha`, exact because `(regime, elapsed)` is Markov.
 
+## Segmental Viterbi
+
+`ExplicitDurationEngine.viterbi` is the max-product twin of the forward scan. A rolling buffer keeps, for
+every pending segment end, the best score and the *start* that achieved it; at each boundary the best
+previous regime is the argmax of the jump step. The last segment is scored with the survival term. The
+backtrack is a reverse scan over steps that jumps from a segment start to the segment ending there in the
+best previous regime. The result is a `(T,)` array of augmented states `j * D_max + (e - 1)`, so
+`regime_of[path]` is the regime path (fed to `segments`, as for the expanded engine) and `phase_of[path]`
+the elapsed count. Ties break to the shortest duration and then the lowest previous regime.
+
+## Chunked scan
+
+Forward and backward passes only store `(T, N)` arrays; the `(T, N, D_max)` tables come from the
+post-processing, which `chunk_size` (`estimation.chunk_size`) evaluates for `chunk_size` steps at a
+time: the steps `a..a+c-1` only involve the `c + D_max - 1` segment starts `s = a - D_max + 1 .. a + c - 1`,
+so a chunk needs `O((c + D_max) N D_max)` memory, independent of `T`. A chunked `Posterior` is collapsed
+over the elapsed count: `(T, N)` arrays with `phase_of == 1`. `chunk_size=None` chunks automatically
+above `T N D_max = 5 \cdot 10^7` (chunks of `max(D_max, 1024)` steps); `loglik` and `viterbi` never build
+`(T, N, D_max)` tables. With entry-time duration covariates the pmf table is itself `(T, N, D_max)`, so
+those runs still raise above the limit.
+
+## Equivalence with the expanded engine
+
+On shifted-negative-binomial sojourns the phase chain and the explicit engine define the same model. The
+golden test (`r = (2, 3)`, mean sojourn about 30 steps, `D_max = 400`, 20 simulated data sets) sees
+log-likelihood differences below `1e-10` (relative) and smoothed-marginal differences below `1e-9`. The data
+must come from the model: the truncation at `D_max` removes tail mass below `1e-10` from every sojourn but
+that mass is *relatively* large in the survival of a final segment near `D_max` steps long, which
+noise-like data can favour.
+
 ## Limits
 
-Full `(T, N, D_max)` tables are returned, so $T N D_{\max} > 5 \cdot 10^7$ raises `NumericalError`
-("use chunked scan"; chunking is E4-T06b). Only `order == 1`, `duration_conditioning == "current"` and
+Full `(T, N, D_max)` tables (`forward`, unchunked `forward_backward`) raise `NumericalError`
+("use chunked scan") when `T N D_max > 5e7`. Only `order == 1`, `duration_conditioning == "current"` and
 `initial in {uniform, free}` (over the first segment's regime) are supported.

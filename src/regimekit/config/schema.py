@@ -199,6 +199,7 @@ class EstimationSection(_Base):
     use_priors: bool = True
     std_errors: bool = False
     device: Literal["cpu", "gpu", "auto"] = "auto"
+    chunk_size: int | None = Field(default=None, ge=1)  # explicit engine: steps per chunk (None = auto)
 
 
 class CovariateForecasterCfg(_Base):

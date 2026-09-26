@@ -28,7 +28,7 @@ def respec(spec: ModelSpec, **changes: object) -> ModelSpec:
     return ModelSpec(**{**{f.name: getattr(spec, f.name) for f in fields(spec)}, **changes})  # type: ignore[arg-type]
 
 
-def per_start_reference(sc: Scenario) -> tuple[float, np.ndarray]:
+def per_start_reference(sc: Scenario) -> tuple[float, np.ndarray, np.ndarray]:
     """Enumeration with the covariate-dependent jump matrix and pmf of every segment start."""
     d, th, spec = sc.data, sc.theta, sc.spec
     y = np.asarray(d.observations)[:, 0]
@@ -59,7 +59,7 @@ def test_e4_t06a_entry_time_covariates_match_per_start_reference(
 ) -> None:
     """AC4: `(T, N, D_max)` pmfs (and `(T, N, N)` jumps) equal the enumeration with per-start rows."""
     sc = make_explicit_scenario(3, 3, 6, family=family, n_cov_d=1, n_cov_pi=1 if with_pi else 0, seed=seed)
-    ref_loglik, ref_elapsed = per_start_reference(sc)
+    ref_loglik, ref_elapsed, _ = per_start_reference(sc)
     post = ENGINE.forward_backward(sc.theta, sc.spec, sc.space, sc.data)
     assert abs(float(post.loglik) - ref_loglik) <= 1e-10 * max(1.0, abs(ref_loglik))
     np.testing.assert_allclose(np.asarray(post.elapsed_posterior()), ref_elapsed, rtol=0, atol=1e-10)
@@ -150,11 +150,11 @@ def test_e4_t06a_regular_grid_does_not_warn() -> None:
 
 
 def test_e4_t06a_memory_guard_raises_before_allocating() -> None:
-    """`T * N * D_max > 5e7` raises `NumericalError("use chunked scan")` (chunking is E4-T06b)."""
+    """Full `(T, N, D_max)` tables above `5e7` cells raise `NumericalError("use chunked scan")` up front."""
     sc = make_explicit_scenario(4, 250, 20, family="geometric", seed=1)
     big = make_dataset(np.zeros((50_001, 1)), np.full(50_001, DT))  # 50_001 * 4 * 250 > 5e7
     with pytest.raises(NumericalError, match="chunked scan"):
-        ENGINE.loglik(sc.theta, sc.spec, sc.space, big)
+        ENGINE.forward(sc.theta, sc.spec, sc.space, big)
 
 
 def test_e4_t06a_mismatched_state_space_is_rejected() -> None:
