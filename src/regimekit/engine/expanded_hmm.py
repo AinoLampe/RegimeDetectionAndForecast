@@ -52,6 +52,22 @@ def _block(x: Array | None, t: int) -> Array:
 _Xs = tuple[Array, Array, Array, Array]
 
 
+def _regime_log_emis(theta: Params, spec: ModelSpec, data: PreparedDataset, dt: Array | None = None) -> Array:
+    """`(T, N)` per-regime emission log-densities; masked steps contribute 0 (shared with E4-T06a).
+
+    `dt` overrides `data.dt` (the explicit-duration engine uses `nominal_dt` everywhere).
+    """
+    y, mask = data.observations, data.mask
+    dt = data.dt if dt is None else dt
+    z_e = _block(data.cov_emission, y.shape[0])
+    # Masked observations contribute zero log-density; sanitize `y` too so a NaN print cannot
+    # leak NaN gradients through the untaken branch (double `where`).
+    observed = jnp.all(mask, axis=-1)  # (T,)
+    y_safe = jnp.where(mask, y, 0.0)
+    log_emis = spec.emission.log_prob(y_safe, dt, theta, z_e)  # (T, N)
+    return jnp.where(observed[:, None], log_emis, 0.0)
+
+
 def _emission_inputs(
     theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
 ) -> tuple[Array, Array, Array, _Xs]:
@@ -60,24 +76,11 @@ def _emission_inputs(
     `ell` is the `(T, S)` expanded emission table; `xs = (ell, z_pi, z_d, dt)` is sliced from step 1
     and shared by the forward, backward and Viterbi scans.
     """
-    y, dt, mask = data.observations, data.dt, data.mask
-    t_len = y.shape[0]
-    z_pi, z_d, z_e = (
-        _block(data.cov_transition, t_len),
-        _block(data.cov_duration, t_len),
-        _block(data.cov_emission, t_len),
-    )
-
-    # Masked observations contribute zero log-density; sanitize `y` too so a NaN print cannot
-    # leak NaN gradients through the untaken branch (double `where`).
-    observed = jnp.all(mask, axis=-1)  # (T,)
-    y_safe = jnp.where(mask, y, 0.0)
-    log_emis = spec.emission.log_prob(y_safe, dt, theta, z_e)  # (T, N)
-    log_emis = jnp.where(observed[:, None], log_emis, 0.0)
-    ell = jnp.take(log_emis, space.index.regime_of, axis=1)  # (T, S)
-
+    t_len = data.observations.shape[0]
+    z_pi, z_d = _block(data.cov_transition, t_len), _block(data.cov_duration, t_len)
+    ell = jnp.take(_regime_log_emis(theta, spec, data), space.index.regime_of, axis=1)  # (T, S)
     log_rho = initial_log_rho(spec, space, theta, data.nominal_dt)
-    return log_rho, ell[0], ell, (ell[1:], z_pi[1:], z_d[1:], dt[1:])
+    return log_rho, ell[0], ell, (ell[1:], z_pi[1:], z_d[1:], data.dt[1:])
 
 
 def _forward_impl(

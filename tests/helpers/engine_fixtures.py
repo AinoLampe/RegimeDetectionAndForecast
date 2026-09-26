@@ -115,3 +115,84 @@ def make_scenario(
     z_pi = rng.normal(size=(t_len, n_cov_pi)) if has_pi else None
     z_d = rng.normal(size=(t_len, n_cov_d)) if n_cov_d else None
     return Scenario(spec, space, theta, make_dataset(y, dt, z_pi=z_pi, z_d=z_d))
+
+
+def make_explicit_scenario(
+    n_states: int,
+    d_max: int,
+    t_len: int,
+    *,
+    family: str = "negbin",
+    n_cov_pi: int = 0,
+    n_cov_d: int = 0,
+    initial: str = "uniform",
+    seed: int = 0,
+    irregular: bool = False,
+    mean_steps: float | None = None,
+) -> Scenario:
+    """Random GBM + explicit-duration jump model (`family` in negbin/geometric/gamma/weibull)."""
+    from regimekit.model.duration.gamma import GammaDuration
+    from regimekit.model.duration.geometric import GeometricDuration
+    from regimekit.model.duration.weibull import WeibullDuration
+    from regimekit.statespace.builders import build_explicit
+
+    rng = np.random.default_rng(seed)
+    cov = tuple(range(n_cov_d))
+    duration: object
+    if family == "negbin":
+        r = rng.integers(1, min(3, d_max) + 1, size=n_states)
+        duration = NegBinDuration(r=tuple(int(x) for x in r), cov_idx=cov)
+    elif family == "geometric":
+        duration = GeometricDuration(cov_idx=cov)
+    elif family == "gamma":
+        duration = GammaDuration(cov_idx=cov)
+    elif family == "weibull":
+        duration = WeibullDuration(cov_idx=cov)
+    else:
+        raise ValueError(family)
+    has_pi = bool(n_cov_pi and n_states >= 3)
+    spec = ModelSpec(
+        n_states=n_states,
+        n_series=1,
+        emission=GBMFamily(),
+        duration=duration,  # type: ignore[arg-type]
+        transition=JumpTransition(cov_idx=tuple(range(n_cov_pi)) if has_pi else ()),
+        order=1,
+        duration_conditioning="current",
+        engine="explicit",
+        d_max=d_max,
+        initial=initial,  # type: ignore[arg-type]
+        param_specs=(),
+    )
+    space = build_explicit(spec)
+    mean = mean_steps if mean_steps is not None else max(2.0, d_max / 3.0)
+    theta: dict[str, jnp.ndarray] = {
+        "emission.mu": jnp.asarray(rng.normal(0.05, 0.1, size=n_states)),
+        "emission.sigma": jnp.asarray(np.sort(rng.uniform(0.1, 0.5, size=n_states))),
+    }
+    if family in ("negbin", "geometric"):
+        a = 1.0 / rng.uniform(0.5 * mean, 1.5 * mean, size=n_states)
+        theta["duration.rate"] = jnp.asarray(-np.log1p(-np.clip(a, 1e-3, 0.9)) / DT)
+    elif family == "gamma":
+        theta["duration.shape"] = jnp.asarray(rng.uniform(1.0, 4.0, size=n_states))
+        theta["duration.scale"] = jnp.asarray(mean * DT / rng.uniform(1.0, 4.0, size=n_states))
+    else:
+        theta["duration.shape"] = jnp.asarray(rng.uniform(0.8, 2.5, size=n_states))
+        theta["duration.scale"] = jnp.asarray(rng.uniform(0.5 * mean, 1.5 * mean, size=n_states) * DT)
+    if n_cov_d:
+        theta["duration.c"] = jnp.asarray(rng.normal(0.0, 0.3, size=(n_states, n_cov_d)))
+    if has_pi:
+        theta["transition.a"] = jnp.asarray(rng.normal(size=(n_states, n_states - 2)))
+        theta["transition.b"] = jnp.asarray(rng.normal(0.0, 0.5, size=(n_states, n_states - 2, n_cov_pi)))
+    else:
+        theta["transition.pi_rows"] = jnp.asarray(rng.dirichlet(np.ones(n_states - 1), size=n_states))
+    if initial == "free":
+        theta["initial.logits"] = jnp.asarray(rng.dirichlet(np.ones(n_states)))
+
+    dt = np.full(t_len, DT)
+    if irregular:
+        dt = DT * rng.integers(1, 4, size=t_len).astype(float)
+    y = rng.normal(0.0, 0.01, size=(t_len, 1))
+    z_pi = rng.normal(size=(t_len, n_cov_pi)) if has_pi else None
+    z_d = rng.normal(size=(t_len, n_cov_d)) if n_cov_d else None
+    return Scenario(spec, space, theta, make_dataset(y, dt, z_pi=z_pi, z_d=z_d))

@@ -58,6 +58,7 @@ nav:
       - Transitions: math/transitions.md
       - State space: math/statespace.md
       - Engines: math/engines.md
+      - Explicit-duration engine: math/engine_explicit.md
       - Estimation: math/estimation.md
       - Forecasting: math/forecasting.md
       - Evaluation: math/evaluation.md

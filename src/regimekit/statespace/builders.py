@@ -193,3 +193,53 @@ def initial_log_rho(spec: ModelSpec, space: StateSpace, theta: Params, nominal_d
         a_bar, _ = space.transition_fn(theta, z_pi0, z_d0, jnp.asarray(nominal_dt))
         return jnp.log(_stationary_distribution(a_bar))
     raise ConfigError(f"unknown initial distribution {spec.initial!r}", path="model.initial_state")
+
+
+def build_explicit(spec: ModelSpec) -> StateSpace:
+    """Augmented `(regime, elapsed)` state space of the explicit-duration engine (E4-T06a).
+
+    State `s = j * D_max + (e - 1)` is regime `j` with `e` steps elapsed in the current segment
+    (`phase_of` holds `e`, 1-based; `elapsed_posterior` therefore buckets to `(T, N, D_max)`).
+    Only order-1 memory with `duration_conditioning="current"` exists for this engine. `next_phase_state`,
+    `is_last_phase` and `entry_state_of` describe the elapsed-time chain (`elapsed + 1`; entering a new
+    regime resets `e = 1`), but no `transition_fn` is attached: the engine works on segments, never on `A_t`.
+    """
+    if spec.order != 1:
+        raise ConfigError(
+            "the explicit-duration engine requires transition.order == 1", path="model.transition.order"
+        )
+    if spec.duration_conditioning != "current":
+        raise ConfigError(
+            "the explicit-duration engine requires duration_conditioning='current'",
+            path="model.transition.duration_conditioning",
+        )
+    n_states, d_max = spec.n_states, spec.d_max
+    layout = build_memory_layout(n_states, 1)
+    n_expanded = n_states * d_max
+    regime_of = np.repeat(np.arange(n_states, dtype=np.int64), d_max)
+    phase_of = np.tile(np.arange(1, d_max + 1, dtype=np.int64), n_states)
+    index = StateIndex(
+        regime_of=jnp.asarray(regime_of),
+        phase_of=jnp.asarray(phase_of),
+        memory_of=jnp.zeros((n_expanded, 0), dtype=jnp.int64),
+        collapse=jnp.asarray(np.eye(n_states, dtype=np.float64)[regime_of]),
+        row_of_state=jnp.asarray(regime_of),
+        n_expanded=n_expanded,
+        n_states=n_states,
+        order=1,
+    )
+    entry_state_of = np.arange(n_states, dtype=np.int64)[None, :] * d_max + np.zeros((n_states, 1), np.int64)
+    entry_state_of[np.arange(n_states), np.arange(n_states)] = -1
+    is_last = phase_of == d_max
+    return StateSpace(
+        index=index,
+        layout=layout,
+        n_expanded=n_expanded,
+        n_rates=n_states,
+        rate_index_of=jnp.asarray(regime_of),
+        entry_state_of=jnp.asarray(entry_state_of),
+        phase1_idx=jnp.asarray(np.flatnonzero(phase_of == 1)),
+        next_phase_state=jnp.asarray(np.where(is_last, -1, np.arange(n_expanded) + 1)),
+        is_last_phase=jnp.asarray(is_last),
+        exit_targets=jnp.asarray(entry_state_of[regime_of, :]),
+    )
