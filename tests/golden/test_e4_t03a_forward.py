@@ -15,7 +15,9 @@ from tests.helpers.engine_fixtures import Scenario, make_scenario
 from tests.reference import ref_hmm
 
 
-def reference(sc: Scenario, mask: np.ndarray | None = None) -> tuple[np.ndarray, float]:
+def reference_full(
+    sc: Scenario, mask: np.ndarray | None = None
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
     """`ref_hmm.forward_backward` fed with scipy emissions and per-step `log A_t` from E4-T02b."""
     d, sp, th = sc.data, sc.space, sc.theta
     y, dt = np.asarray(d.observations)[:, 0], np.asarray(d.dt)
@@ -35,7 +37,12 @@ def reference(sc: Scenario, mask: np.ndarray | None = None) -> tuple[np.ndarray,
     _, log_a = jax.vmap(lambda zp, zd, dti: sp.transition_fn(th, zp, zd, dti))(z_pi_j, z_d_j, jnp.asarray(dt))
     log_a = np.asarray(log_a)
     log_rho = np.asarray(initial_log_rho(sc.spec, sp, th, d.nominal_dt))
-    log_alpha, _, _, loglik = ref_hmm.forward_backward(log_rho, log_a, log_emis)
+    return ref_hmm.forward_backward(log_rho, log_a, log_emis)
+
+
+def reference(sc: Scenario, mask: np.ndarray | None = None) -> tuple[np.ndarray, float]:
+    """`(log_alpha, loglik)` of `reference_full`."""
+    log_alpha, _, _, loglik = reference_full(sc, mask)
     return log_alpha, loglik
 
 

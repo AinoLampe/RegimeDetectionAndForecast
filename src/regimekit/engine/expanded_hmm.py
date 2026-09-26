@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING
 import jax
 import jax.numpy as jnp
 
+from regimekit.engine.base import Posterior
 from regimekit.statespace.builders import initial_log_rho
 from regimekit.utils.errors import NumericalError
 from regimekit.utils.typing import Array
@@ -48,10 +49,13 @@ def _block(x: Array | None, t: int) -> Array:
     return jnp.zeros((t, 0)) if x is None else x
 
 
-@partial(jax.jit, static_argnames=("spec",))
-def _forward_core(
+_Xs = tuple[Array, Array, Array, Array]
+
+
+def _forward_impl(
     theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
-) -> tuple[Array, Array]:
+) -> tuple[Array, Array, _Xs]:
+    """`(log_alpha, loglik, xs)`; `xs = (ell, z_pi, z_d, dt)` sliced from step 1, shared with backward."""
     y, dt, mask = data.observations, data.dt, data.mask
     t_len = y.shape[0]
     z_pi, z_d, z_e = (
@@ -70,16 +74,50 @@ def _forward_core(
 
     log_rho = initial_log_rho(spec, space, theta, data.nominal_dt)
     alpha_0 = log_rho + ell[0]
+    xs = (ell[1:], z_pi[1:], z_d[1:], dt[1:])
 
-    def step(alpha_prev: Array, xs: tuple[Array, Array, Array, Array]) -> tuple[Array, Array]:
-        ell_t, z_pi_t, z_d_t, dt_t = xs
+    def step(alpha_prev: Array, xs_t: _Xs) -> tuple[Array, Array]:
+        ell_t, z_pi_t, z_d_t, dt_t = xs_t
         _, log_a = space.transition_fn(theta, z_pi_t, z_d_t, dt_t)
         alpha_t = ell_t + _safe_logsumexp(alpha_prev[:, None] + log_a, axis=0)
         return alpha_t, alpha_t
 
-    _, rest = jax.lax.scan(step, alpha_0, (ell[1:], z_pi[1:], z_d[1:], dt[1:]))
+    _, rest = jax.lax.scan(step, alpha_0, xs)
     log_alpha = jnp.concatenate([alpha_0[None, :], rest], axis=0)
-    return log_alpha, _safe_logsumexp(log_alpha[-1], axis=0)
+    return log_alpha, _safe_logsumexp(log_alpha[-1], axis=0), xs
+
+
+@partial(jax.jit, static_argnames=("spec",))
+def _forward_core(
+    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
+) -> tuple[Array, Array]:
+    log_alpha, loglik, _ = _forward_impl(theta, spec, space, data)
+    return log_alpha, loglik
+
+
+@partial(jax.jit, static_argnames=("spec",))
+def _forward_backward_core(
+    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
+) -> tuple[Array, Array, Array, Array]:
+    """`(log_alpha, log_beta, smoothed, loglik)`; `A_{t+1}` is rebuilt inside the reverse scan."""
+    log_alpha, loglik, xs = _forward_impl(theta, spec, space, data)
+    s = log_alpha.shape[1]
+
+    def step(beta_next: Array, xs_next: _Xs) -> tuple[Array, Array]:
+        ell_next, z_pi_next, z_d_next, dt_next = xs_next
+        _, log_a = space.transition_fn(theta, z_pi_next, z_d_next, dt_next)
+        beta_t = _safe_logsumexp(log_a + (ell_next + beta_next)[None, :], axis=1)
+        return beta_t, beta_t
+
+    beta_last = jnp.zeros((s,))
+    _, rest = jax.lax.scan(step, beta_last, xs, reverse=True)  # rest[t] = beta_t, t = 0..T-2
+    log_beta = jnp.concatenate([rest, beta_last[None, :]], axis=0)
+
+    log_gamma = log_alpha + log_beta
+    norm = _safe_logsumexp(log_gamma, axis=1)[:, None]
+    finite = jnp.isfinite(log_gamma)
+    smoothed = jnp.where(finite, jnp.exp(jnp.where(finite, log_gamma - norm, 0.0)), 0.0)
+    return log_alpha, log_beta, smoothed, loglik
 
 
 def _check_finite(loglik: Array) -> None:
@@ -88,6 +126,18 @@ def _check_finite(loglik: Array) -> None:
         return
     if not bool(jnp.isfinite(loglik)):
         raise NumericalError("non-finite log-likelihood from the forward recursion", path="loglik")
+
+
+def _check_posterior(log_alpha: Array, log_beta: Array, smoothed: Array, loglik: Array) -> None:
+    """Public-boundary guard: no NaN in the log arrays (`-inf` is structural), all else finite."""
+    if isinstance(loglik, jax.core.Tracer):
+        return
+    _check_finite(loglik)
+    for name, arr in (("log_alpha", log_alpha), ("log_beta", log_beta)):
+        if bool(jnp.any(jnp.isnan(arr))):
+            raise NumericalError(f"NaN in {name} from the forward-backward recursion", path=name)
+    if not bool(jnp.all(jnp.isfinite(smoothed))):
+        raise NumericalError("non-finite smoothed posterior", path="smoothed")
 
 
 class ExpandedHMMEngine:
@@ -109,6 +159,21 @@ class ExpandedHMMEngine:
     def loglik(self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
         """`log p(y_1:T)`, differentiable w.r.t. `theta`."""
         return self.forward(theta, spec, space, data)[1]
+
+    def forward_backward(
+        self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
+    ) -> Posterior:
+        """Forward then backward pass (sharing the emission table) as a `Posterior`.
+
+        Raises:
+            NumericalError: on a non-finite loglik/posterior (checked outside jit, only when called
+                with concrete arrays).
+        """
+        log_alpha, log_beta, smoothed, loglik = _forward_backward_core(theta, spec, space, data)
+        _check_posterior(log_alpha, log_beta, smoothed, loglik)
+        return Posterior(
+            log_alpha=log_alpha, log_beta=log_beta, smoothed=smoothed, loglik=loglik, index=space.index
+        )
 
     def approx(self) -> None:
         """No approximate-inference plug-in for the expanded engine (FR-X01 hook)."""
