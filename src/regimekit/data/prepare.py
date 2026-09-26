@@ -88,6 +88,23 @@ class _Frame:
     clock: Clock
 
 
+@dataclass(frozen=True, eq=False)
+class PrepDiagnostics:
+    """What the last `fit`/`transform` pipeline run removed or carried forward (for the quality report).
+
+    Attributes:
+        missing_price_rows: primary rows dropped for a missing price (`missing_returns: drop`).
+        warmup_rows: leading grid rows trimmed before every covariate had a usable value.
+        dropped: per covariate name, grid rows its `missing` policy dropped (rows can overlap).
+        staleness: per covariate name, `(T_grid,)` staleness on the full grid (-1 = no usable print).
+    """
+
+    missing_price_rows: int
+    warmup_rows: int
+    dropped: dict[str, int]
+    staleness: dict[str, np.ndarray]
+
+
 class Preparer:
     """Fit/transform preparation of a `PreparedDataset` (statistics from the training window only).
 
@@ -99,6 +116,7 @@ class Preparer:
         """Store the `data:` config section; nothing is fitted yet."""
         self.cfg = cfg
         self._stats: PrepStats | None = None
+        self.diagnostics: PrepDiagnostics | None = None
 
     @property
     def prep_stats(self) -> PrepStats:
@@ -224,14 +242,27 @@ class Preparer:
 
         n_cov = len(cfg.covariates)
         x = np.empty((grid.n_steps, n_cov), dtype=np.float64)
+        staleness: dict[str, np.ndarray] = {}
         for i, (c, s) in enumerate(zip(cfg.covariates, covs, strict=True)):
             s = _canonical(s)
             values = apply_transforms(s.values, c.transform, path=f"data.covariates[{i}].transform")
-            x[:, i], _ = align_covariate(grid, replace(s, values=values), c.lag, c.max_staleness, index=i)
+            x[:, i], staleness[c.name] = align_covariate(
+                grid, replace(s, values=values), c.lag, c.max_staleness, index=i
+            )
         x[~np.isfinite(x)] = np.nan  # defensive: nothing non-finite may reach the dataset
+        missing_price_rows = int(obs.times.shape[0] - grid.times.shape[0])
+        # Recorded before the policies run, so a report can still show staleness if `error` raises.
+        self.diagnostics = PrepDiagnostics(missing_price_rows, 0, {}, staleness)
 
         start = self._warmup(x, cfg.covariates, grid.end_times)
-        rows = start + np.flatnonzero(self._policy_keep(x[start:], cfg.covariates, grid.end_times[start:]))
+        keep, dropped = self._policy_keep(x[start:], cfg.covariates, grid.end_times[start:])
+        rows = start + np.flatnonzero(keep)
+        self.diagnostics = PrepDiagnostics(
+            missing_price_rows=missing_price_rows,
+            warmup_rows=start,
+            dropped=dropped,
+            staleness=staleness,
+        )
         return _Frame(
             times=grid.end_times[rows],
             observations=y[rows],
@@ -282,8 +313,11 @@ class Preparer:
         return start
 
     @staticmethod
-    def _policy_keep(x: np.ndarray, covariates: Sequence[CovariateCfg], end_times: np.ndarray) -> np.ndarray:
+    def _policy_keep(
+        x: np.ndarray, covariates: Sequence[CovariateCfg], end_times: np.ndarray
+    ) -> tuple[np.ndarray, dict[str, int]]:
         keep = np.ones(x.shape[0], dtype=bool)
+        dropped = {c.name: 0 for c in covariates}
         for i, c in enumerate(covariates):
             missing = np.isnan(x[:, i])
             if not missing.any():
@@ -296,8 +330,9 @@ class Preparer:
                     path=f"data.covariates[{i}].missing",
                 )
             _log.info("covariate_rows_dropped", covariate=c.name, policy=c.missing, count=int(missing.sum()))
+            dropped[c.name] = int(missing.sum())
             keep &= ~missing
-        return keep
+        return keep, dropped
 
 
 def prep_stats_to_json(stats: PrepStats) -> str:

@@ -23,7 +23,7 @@
 | E2-T05 | Parquet cache, snapshot IDs, offline replay | M | 2 | E2-T01 | done | 9ad059b | TDD (tests committed failing first). AC1 `test_e2_t05_second_identical_fetch_hits_cache`; AC2 `test_e2_t05_snapshot_id_identical_across_fresh_caches` (3 caches, clocks 30 d apart, identical parquet bytes); AC3 `test_e2_t05_offline_replay_is_bitwise_identical` + `..._offline_without_cache_raises`; AC4 `..._max_age_zero_forces_refetch` + `..._pinned_snapshot_returns_old_generation_after_refetch`; plus `..._cached_result_equals_provider_output` (multi-symbol, NaN, bytes vs the provider's own output). Choices: stem `<symbols joined by +>_<interval>_<adj\|raw>`, unsafe chars -> `_`, meta records the exact request key so colliding names are misses; results always read back from the cache (online == offline bitwise); `1h`/`1d` narrower windows are clipped hits, `1wk`/`1mo` need the identical window; pinned snapshots never call the provider and must cover the window; adapter output must echo provider/symbols/interval/adjusted/series_id exactly; invalid policy -> `ConfigError` (`data.cache.*`); `Cache.generations()`/`load_prices(key, id)` for E2-T08; mypy override for untyped pyarrow. Independent review: fixed silent file-name collisions, relabelled-output crash, resampled-window inconsistency, date-only-end coverage mismatch, unwrapped parse errors; added provider-output and A->B->A tests |
 | E2-T06 | Calendar, Δ, alignment, lagging | M | 2 | E1-T01 | done | bbb6397 | TDD. AC1 `test_e2_t06_{trading,calendar,steps}_clock_*` (Good Friday 2024 Thu->Mon gap: 1/252, exactly 4/365.25, 1.0 + `irregular=False`); AC2 `test_e2_t06_monthly_covariate_is_lagged_step_function[lag=1,2,5]` + `..._lag_one_hand_indices` (exact rows on a hand-counted 64-business-day grid); AC3 `..._lag_zero_raises_config_error` (+ index in path), `..._staleness_exceeded_gives_nan_and_reports_counter`; AC4 hypothesis `test_e2_t06_no_lookahead_after_grid_start_of_step` (spike at τ_{t+1}, later spike, all later prints overwritten; mutation-checked against an off-by-one lag); plus `..._matches_pandas_merge_asof_then_shift`. Choices: `build_grid(obs, missing_returns, *, clock, bars_per_day=1)`; `Grid.times` is `(T+1,)` incl. τ_0, `Grid.end_times` = `times[1:]` for `PreparedDataset.times`; `drop` removes a row if *any* of the M series is NaN (mask stays all-True in 0.1.0); code row t = as-of value at τ_{t+1-lag} (CLAUDE.md §3.7); as-of via `searchsorted` (== `merge_asof` backward, tested) with NaN prints treated as "no print"; duplicate print timestamps: last in input order wins; staleness = grid steps since the print first became visible (-1 = no usable print), reported even where the value is NaN; prints before τ_0 are aged in median grid spacings (ceil) instead of counting as fresh; `align_covariate(..., index=i)` for the `data.covariates[i].*` error path, `align_covariates` stacks to `AlignedCovariates`. Independent review: no AC/rule defects; fixed pre-grid prints counted as fresh, unguarded `is_irregular`, added `end_times` + merge_asof differential test, removed a tautological test |
 | E2-T07 | `Preparer` fit/transform | M | 2 | E2-T06 | done | c2db68a | TDD. AC1 `test_e2_t07_transform_uses_train_window_stats` (train rows mean/std 0/1 at 1e-12, stored stats == hand-computed train moments, full mean > 0.5) + `..._transform_on_test_window_reuses_train_stats` + `..._stats_ignore_data_after_train_end` (post-train_end changes leave `PrepStats` and train rows bit-identical); AC2 `..._ffill_carries_up_to_max_staleness`, `..._ffill_drops_rows_beyond_max_staleness`, `..._drop_keeps_everything_aligned` (vs a hole-free reference, every field re-sliced), `..._error_policy_names_first_timestamp`; AC3 `..._log_then_diff_matches_pandas` (atol 1e-15, also end-to-end) + `..._transform_order_matters` (pct vs pandas); AC4 `..._prep_stats_json_round_trip`, `..._validate_passes_on_appendix_a`, `..._validate_passes_under_steps_clock` (Part II amendment 15.7); AC5 `..._covariate_in_two_entry_points_has_identical_columns`. Decisions: (a) alignment always forward-fills up to `max_staleness` (concept §5.6), so `ffill` and `drop` both drop leftover NaN rows ("apply next" = drop) -- `drop` without fill needs `max_staleness: 0`; (b) structural warm-up (lag-1 + one row per `diff`/`pct`) is trimmed under every policy, a later start raises under `error` and warns otherwise; (c) `covs[i]` pairs with `data.covariates[i]` by position, checked against `series_id`; (d) transforms act on the series' own finite prints after a stable time sort with last-wins de-duplication (revisions); (e) std ddof 0, `zscore` -> `FutureWarning` + train-window standardization of that covariate (its list position is ignored); (f) JSON helpers are `prep_stats_to_json`/`prep_stats_from_json` in `data/prepare.py` (contracts.py untouched); (g) `train_window` = ISO end times of the first prepared row and the last train row (date-only at midnight); `train_end` accepts str/datetime64/Timestamp, aware values converted to UTC. Independent review: fixed inf leaking via `pct`/raw inf prints, tz-aware `train_end` cut at wall-clock time, unsorted/duplicated prints transformed in input order; added the train-only look-ahead test |
-| E2-T08 | `fetch` command + data-quality report | S | 2 | E2-T05, E2-T07, E1-T02b | todo | | |
+| E2-T08 | `fetch` command + data-quality report | S | 2 | E2-T05, E2-T07, E1-T02b | done | MERGE_HASH | AC1 `test_e2_t08_report_lists_each_injected_defect` (synthetic `tests/fixtures/csv/defects/DEFECTS.csv` + generator: weekday gap, duplicate, zero price, 10-sigma jump, each with timestamps; read raw with pandas because providers de-duplicate); AC2 `test_e2_t08_fetch_writes_all_outputs` (all five files, snapshot ids == `ds.snapshot_ids`, ToS note logged) + `..._offline_refetch_is_bitwise_identical`; AC3 `..._missing_error_with_stale_covariate_exits_3` (report still written, no dataset); AC4 `..._prepared_round_trip_is_bitwise[trading,calendar,steps]`, `..._part_ii_fields`, `..._empty_blocks` (dtype/shape/bytes, not just `==`). Also exit 5 (provider), exit 2 (pinned snapshot + covariates), exit 1 (unwritable output), adjustment check through a real refetch. Decisions: csv files relative to the config file's directory; stooq/tiingo quota files in `data.cache.dir`; `train_end` = first primary timestamp + `initial_train_years` * 365.25 d (constant from `utils/clock.py`), capped at the last; outliers use robust MAD sigma (MAD 0 -> no check); weekday-gap check for `1d` only; quality files go to the run output dir (see Spec fixes); the adjustment check always compares the two newest cache generations; the report is written even when preparation fails (then only the missing-price drop count is claimed) and a failing run deletes stale dataset files from an earlier run; `Preparer.diagnostics` (`PrepDiagnostics`) added to E2-T07's module for staleness/drop counts. Independent review: fixed `(T, 0)` blocks crashing `read_prepared`, adjustment comparing the wrong generations under a pinned snapshot, raw `IndexError`/`OSError` escapes (now `DataError`/`PersistenceError`), stale outputs next to a failure report, a weak quota test |
 | E2-T09 | tiingo adapter (optional) | S | 2 | E2-T01 | done | 63152ad | AC1 `test_e2_t09_passes_contract_suite_daily_and_resampled` (+ exact `adjClose`/`close` selection, weekly/monthly last-close checks) on a synthetic JSON cassette with a dividend so adjusted != raw; AC2 `test_e2_t09_hourly_limit_enforced_with_fake_clock` (51st request refused before the downloader, freed at exactly +3600 s) and `test_e2_t09_missing_key_raises_without_network`. Choices: stdlib `urllib` client, so no optional dependency, no import guard and no ADR-0010 addendum -- the adapter always registers (ticket: "registers only if its optional dependency is present" is moot); token in the `Authorization` header instead of a `token=` query parameter (keeps it out of URLs); rolling hour/24 h windows + distinct symbols per UTC month instead of "token buckets" (same reasoning as E2-T04), persisted in `<quota_dir>/tiingo_quota.json`, charged per symbol before the retry loop (retries free, as stooq); `last_close_per_period`/`PERIOD_FREQ` moved from stooq.py to base.py for reuse. Independent review: no blocking issues; added monthly-resampling and refused-batch-state assertions, fixed docstring style (broke `mkdocs --strict`), per-thread quota temp file |
 | E3-T01 | `EmissionFamily` protocol + GBM | M | 2 | E1-T03b, E1-T04 | done | 6434e40 | AC1-AC6 verified with real tests (scipy refs at 1e-12, Appendix E numbers, covariate zero/nonzero, 3-SE sampler moments, jit+grad, steps-clock); independent review caught a silent cross-series sigma-sharing gap under `constraint=increasing` + `n_series>1`, fixed (now `ConfigError`), plus a test-quality nit (AC2 read family's own `_mean_sd` instead of recomputing), fixed |
 | E3-T02 | Student-t emission | S | 2 | E3-T01 | todo | | |
@@ -69,24 +69,35 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-No ticket in progress; `main` is clean and `nox -s lint types tests docs` is green (622 passed, 1 skipped = the
-opt-in live yfinance test, coverage 97.6 %).
+No ticket in progress; `main` is clean and `nox -s lint types tests docs` is green (709 passed, 1 skipped = the
+opt-in live yfinance test, coverage 98.0 %).
 
-Run 2026-09-26 #2 (budget 3): E2-T04 (fred + cboe, b08717f), E2-T09 (tiingo, 63152ad), E2-T05 (cache,
-9ad059b) done. Phase 2 is not complete yet (E2-T06/T07/T08, E3-T02/T04/T06 remain), so no exit check.
+Run 2026-09-26 #3 (budget 3): E2-T06 (calendar, bbb6397), E2-T07 (Preparer, c2db68a), E2-T08 (fetch + quality
+report, see table) done. Track A of Phase 2 is complete; Phase 2 is not (E3-T02/T04/T06 remain), so no exit check
+yet. The phase-2 exit criterion ("`regimekit fetch` works on `^GDAXI` + VIX/T10Y2Y; offline replay") is covered
+offline by E2-T08's csv tests; the live `^GDAXI`/FRED run needs network (see Needs CI / network).
 
-Next eligible, in Step 1 order (Phase 2, no critical-path ticket left in it; phase-row order): E2-T06
-(calendar; adds `future_grid`/`is_irregular` to the existing `utils/clock.py`) -> E2-T07 -> E2-T08 (needs the
-owner decision on pinning multi-series runs, see Findings) -> E3-T02 -> E3-T06 -> E3-T04; then Phase 3
-E4-T03a (critical path) -> E4-T03b. E4-T06a needs E3-T04 first.
+Next eligible, in Step 1 order (Phase 2 first; no critical-path ticket left in it; phase-row order, Track B):
+E3-T02 (Student-t) -> E3-T06 (lattice/ordering) -> E3-T04 (explicit durations); then Phase 3 E4-T03a (critical
+path, already unblocked) -> E4-T03b -> E4-T04 / E4-T05. E4-T06a needs E3-T04. E6-T03 (phase 5) is also unblocked.
 
 Environment note: if `.venv` points at a missing interpreter, `uv sync --all-groups` repairs it. pandas is 3.x
 here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`). Run only one coverage-enabled
 pytest at a time in this directory (two concurrent runs collide on the coverage data file).
 
 ## Blocked / needs owner
+- E2-T05/E2-T08 (owner decision, does not block tickets): `data.cache.snapshot` is one id, but a run with covariates
+  reads several cache entries. `fetch` now rejects a pinned id together with covariates (`ConfigError`, exit 2, path
+  `data.cache.snapshot`); pinning works for primary-only runs, and `--offline` replays the current cache. Options: (a)
+  pin only the primary, (b) accept a mapping/list of ids (config schema change), (c) pin via a run's `snapshots.json`
+  (e.g. `--snapshots runs/x/snapshots.json`, verified on replay). Relevant again for E8-T02 (`Project`) and E8-T03.
 
 ## Spec fixes
+- E2-T08: the quality report (`quality.json/.md`) is written into the run output directory next to
+  `prepared.parquet`, not "next to the cache" (concept §5.6, ticket Goal): the cache is shared between projects and the
+  report depends on the config (covariates, policies). Recorded as a deviation in the merge commit.
+- E2-T08: "|return| > 8 sigma" uses the robust scale `1.4826 * MAD` (a single outlier inflates the sample std enough to
+  hide itself); `PersistenceError` from `fetch` maps to exit 1 (CLAUDE.md §3.8).
 - E2-T06 (CLAUDE.md §3.2 applied): `is_irregular(dt)` lives in `utils/clock.py`, not `data/calendar.py`; it raises
   `DataError(path="dt")` on empty or non-positive input. `build_grid` takes keyword `clock`/`bars_per_day` (the
   ticket's two-argument signature cannot compute `Δ_t` without them).
@@ -105,6 +116,10 @@ pytest at a time in this directory (two concurrent runs collide on the coverage 
   part of AC4) hold regardless and are unaffected.
 
 ## Findings for the owner
+- E2-T08: providers de-duplicate timestamps (`clean_frame`, keep last) before the cache, so the quality report's
+  "duplicated timestamps" check can only fire for an adapter that passes raw duplicates through; in practice
+  duplicates are resolved silently upstream. Reporting them would need adapters to surface the count (e.g. in
+  `ObservationSet.meta`) -- a change to merged E2-T01..T04 code.
 - E2-T07 (semantics to confirm): per concept §5.6, alignment always forward-fills up to `max_staleness`, so
   `missing: ffill` and `missing: drop` behave identically on what is left (rows dropped jointly); only `error`
   differs. A user who wants "drop instead of filling" must set `max_staleness: 0`. Also, `missing: error` does not fire
@@ -314,22 +329,28 @@ pytest at a time in this directory (two concurrent runs collide on the coverage 
   here; the first fragment will land with the first ticket that ships real behavior.
 
 ## Follow-ups
-- E2-T07 -> E2-T08/E8-T01: `PrepStats` JSON lives in `regimekit.data.prepare.prep_stats_to_json/from_json` (not
-  methods on the contract). E2-T08 needs per-covariate staleness for its histogram: call `data.calendar.align_covariate`
-  directly (the `Preparer` does not expose it).
+- E2-T07 -> E8-T01: `PrepStats` JSON lives in `regimekit.data.prepare.prep_stats_to_json/from_json` (not methods on the
+  contract); `persistence.results.write_prepared/read_prepared` already use them.
+- E2-T08 -> E8-T02: reuse `cli.app.run_fetch` for `Project.fetch()`; decide the snapshot-pinning question above and
+  verify recorded snapshot ids on replay. `project.output_dir` is relative to the working directory while csv files
+  resolve relative to the config file -- align when `Project` owns paths.
+- E2-T08 -> E7-T02a: `fetch` defines the initial training window as first timestamp + `initial_train_years` * 365.25
+  days; define the first fold's `train_end` the same way so standardization and fold 1 agree.
+- E2-T08: the weekday-gap check runs only for `1d` data (no intraday/weekly calendar), and every exchange holiday is
+  listed as a gap (no holiday calendar in 0.1.0).
 - E2-T07 -> E7-T02b: `Preparer.fit` has no `train_start`, so under the `rolling` scheme standardization covers
   `[first prepared row, train_end]`, not the fold's `[train_start, train_end]` (concept §5.6 says `[start, train_end]`);
   add an optional `train_start` there if rolling folds must be standardized on the fold only. The `zscore`
   `FutureWarning` fires once per `fit` (once per fold). `nominal_dt` is the median over the whole (pre-drop) grid, so
   under the calendar clock it can move with data after `train_end` (metadata only, but E5-T03 uses it).
-- E2-T06 -> E2-T08: the staleness histogram must skip the `-1` sentinel ("no usable print"); flag duplicate covariate
-  timestamps (alignment silently takes the last one).
+- E2-T06 (open): duplicated covariate timestamps are resolved silently (last print wins) and are not in the quality
+  report (it checks the primary only); add a covariate section if revisions matter.
 - E2-T06 -> E9-T01: `build_grid` drops a row if *any* series is missing, so `mask` is all-True; per-series masking for
   M > 1 needs a different missing-price policy.
 - E2-T06 -> E6-T04a: `future_grid` goes into `utils/clock.py` (CLAUDE.md §3.2), next to `is_irregular`.
 - E2-T05: providers return `snapshot_id=""` and the cache fills it; `CacheableProvider` Protocol goes in `data/cache.py` (CLAUDE.md §3.2). `DataProvider` (finance/providers/base.py) is the structural match.
 - E2-T04/E2-T09: reuse `with_retries`, `throttle`, `clip_window`, `infer_frequency` from `finance/providers/base.py`; follow the injectable-downloader + parquet-cassette pattern of E2-T02/T03 (`tests/fixtures/cassettes/<provider>/make_cassettes.py`). `check_price_contract`/`check_series_contract` live in `tests/finance/provider_contract.py`.
-- E2-T08: CBOE `urls` exist only as adapter kwargs (concept §5.6 says "URL patterns in config", but the config
+- E2-T08 (kept as-is): CBOE `urls` exist only as adapter kwargs; `fetch` uses the adapter's `DEFAULT_URLS` (concept §5.6 says "URL patterns in config", but the config
   schema has no field for them); decide whether `fetch` exposes them or uses `DEFAULT_URLS`. Provider `api_key`
   kwargs (stooq, fred) are programmatic/test overrides only -- never map config values into them (CLAUDE.md §9).
 - E2-T08/E8-T02: stooq/tiingo quota files default to `~/.cache/regimekit`; whoever builds providers from config
@@ -343,6 +364,9 @@ pytest at a time in this directory (two concurrent runs collide on the coverage 
 - `with_retries` retries every `ProviderError`, including non-transient ones raised by a downloader (e.g. HTTP 403 from a bad stooq key costs 5 attempts with backoff). Consider a non-retryable subclass if this matters in practice. Same for an invalid FRED key (HTTP 400 via fredapi `ValueError`): retried 5x before the user sees FRED's message. Tiingo 401/403/429 are retried too, and since retries are not charged the client-side quota can undercount Tiingo's tally (up to 5x per symbol in the worst case).
 
 ## Needs CI / network / GPU
+- E2-T08 / Phase 2 exit criterion: `regimekit fetch` on the real Appendix A config (`^GDAXI` via yfinance, VIXCLS and
+  T10Y2Y via FRED) was not run (`ALLOW_LIVE_NETWORK: no`, no `FRED_API_KEY`); the same pipeline is verified offline on
+  csv fixtures, including `--offline` bitwise replay.
 - E0-T03 AC1: "PR pipeline completes in < 10 minutes on the skeleton" needs a real GitHub Actions run (no
   remote configured for this repo yet); workflow YAML validated structurally instead
   (`tests/unit/test_e0_t03_workflows.py`).

@@ -134,3 +134,45 @@ fetched as parquet under `data.cache.dir` (default `~/.cache/regimekit`, `~` exp
 - Each meta file records the exact request key, so two requests whose file names collide (unsafe
   characters become `_`; case-insensitive file systems) never serve each other's data.
 - Older generations are never deleted automatically; remove `<name>.<id>.parquet` files you no longer need.
+
+## `regimekit fetch`
+
+`regimekit [--out DIR] [--offline] fetch CONFIG` runs the data pipeline end to end:
+
+1. Each provider named in `data.primary` and `data.covariates` is wrapped in the cache (see above),
+   using `data.cache.snapshot`, `data.cache.max_age_days` and `--offline`. Each provider's
+   terms-of-service note is logged at INFO level. `csv` files are looked up relative to the config
+   file's directory (`symbols: [DEMO]` reads `DEMO.csv`, `series: VIXCLS` reads `VIXCLS.csv`).
+   stooq/tiingo keep their client-side quota files in `data.cache.dir`.
+2. The `Preparer` is fitted on the initial training window: the first
+   `evaluation.backtest.initial_train_years` years, capped at the full span. The data is then
+   transformed (see [Data contracts](contracts.md)).
+3. Outputs go to `--out`, or to `project.output_dir` when `--out` is not given:
+   - `prepared.parquet`: the `PreparedDataset`, bit-exact (`regimekit.persistence.results.read_prepared`
+     reads it back);
+   - `prep_stats.json`: the standardization statistics;
+   - `snapshots.json`: the snapshot id of the primary and each covariate. `--offline` re-runs from the
+     *current* cache generations (bitwise identical as long as the cache has not been refreshed since);
+     it does not check the ids in `snapshots.json`. A pinned `data.cache.snapshot` id only works for runs
+     without covariates, because one id names one cache entry.
+   - A failing run removes `prepared.parquet`, `prep_stats.json` and `snapshots.json` left in the output
+     directory by an earlier run, so the new report never sits next to a stale dataset.
+   - `quality.json` / `quality.md`: the data-quality report.
+
+The report lists, each with its timestamps:
+- gaps against a plain weekday calendar (daily data only; exchange holidays show up by design);
+- duplicated timestamps;
+- zero or negative prices;
+- log-returns beyond 8 sigma. Sigma is the robust MAD scale, and these are flagged only.
+- adjustment discontinuities: the maximum relative price difference between the two newest cache
+  generations of the primary request, which exist after a refetch that changed the data. Anything
+  above 1e-6 is flagged.
+- each covariate's staleness histogram, in grid steps since the print became visible, with
+  `no_value` for none yet;
+- the rows removed for missing prices, for warm-up and by each covariate's missing policy. When
+  preparation fails, only the missing-price count is reported.
+
+The report is also written when preparation fails.
+
+Exit codes: 0 success, 1 output cannot be written (`PersistenceError`), 2 invalid config, 3 data
+error (for example `missing: error` with a stale covariate), 5 provider error.
