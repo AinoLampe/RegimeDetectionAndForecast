@@ -23,9 +23,11 @@ import pandas as pd
 
 from regimekit.data.contracts import CovariateSeries, ObservationSet
 from regimekit.finance.providers.base import (
+    PERIOD_FREQ,
     check_interval,
     clean_frame,
     clip_window,
+    last_close_per_period,
     register,
     to_utc_ns,
     with_retries,
@@ -38,7 +40,6 @@ Downloader = Callable[[str, str, str | None, str], pd.DataFrame]
 API_KEY_ENV = "STOOQ_API_KEY"
 STOOQ_SYMBOLS: dict[str, str] = {"^GDAXI": "^dax", "^GSPC": "^spx"}
 """Yahoo-style symbol -> stooq symbol; anything not listed is passed through unchanged."""
-_PERIOD_FREQ = {"1wk": "W-SUN", "1mo": "M"}
 TOS_NOTE = (
     "Stooq data is for personal use under stooq.com's terms; an API key and a daily request quota apply. "
     "Do not redistribute it."
@@ -65,13 +66,6 @@ def _download_stooq(
     except Exception as exc:  # message may contain the URL (and thus the key): report the type only
         raise ProviderError(f"stooq request failed ({type(exc).__name__})", path="data.symbols") from None
     return frame
-
-
-def _last_close_per_period(close: pd.Series, interval: str) -> pd.Series:
-    """Last close of each week/month, labelled with the last actual trading timestamp of the period."""
-    keys = pd.DatetimeIndex(close.index).to_period(_PERIOD_FREQ[interval])
-    is_last = np.append(np.asarray(keys[1:] != keys[:-1]), True)
-    return close[is_last]
 
 
 @register
@@ -166,8 +160,8 @@ class StooqProvider:
         close = clip_window(clean_frame(frame), start, end)["Close"].dropna()
         if close.empty:
             raise ProviderError(f"no rows for {symbol!r} in [{start}, {end}]", path="data.start")
-        if interval in _PERIOD_FREQ:
-            close = _last_close_per_period(close, interval)
+        if interval in PERIOD_FREQ:
+            close = last_close_per_period(close, interval)
         return close.rename(symbol)
 
     def fetch_prices(
@@ -188,7 +182,7 @@ class StooqProvider:
             [self._fetch_one(s, start, end, key, interval) for s in symbols], axis=1, join="outer", sort=True
         )
         meta: dict[str, object] = {}
-        if interval in _PERIOD_FREQ:
+        if interval in PERIOD_FREQ:
             meta["resampled_from"] = "1d (last close of each period)"
         return ObservationSet(
             symbols=tuple(symbols),

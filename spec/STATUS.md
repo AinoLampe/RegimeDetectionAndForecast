@@ -24,7 +24,7 @@
 | E2-T06 | Calendar, Δ, alignment, lagging | M | 2 | E1-T01 | todo | | |
 | E2-T07 | `Preparer` fit/transform | M | 2 | E2-T06 | todo | | |
 | E2-T08 | `fetch` command + data-quality report | S | 2 | E2-T05, E2-T07, E1-T02b | todo | | |
-| E2-T09 | tiingo adapter (optional) | S | 2 | E2-T01 | todo | | |
+| E2-T09 | tiingo adapter (optional) | S | 2 | E2-T01 | done | COMMIT | AC1 `test_e2_t09_passes_contract_suite_daily_and_resampled` (+ exact `adjClose`/`close` selection, weekly/monthly last-close checks) on a synthetic JSON cassette with a dividend so adjusted != raw; AC2 `test_e2_t09_hourly_limit_enforced_with_fake_clock` (51st request refused before the downloader, freed at exactly +3600 s) and `test_e2_t09_missing_key_raises_without_network`. Choices: stdlib `urllib` client, so no optional dependency, no import guard and no ADR-0010 addendum -- the adapter always registers (ticket: "registers only if its optional dependency is present" is moot); token in the `Authorization` header instead of a `token=` query parameter (keeps it out of URLs); rolling hour/24 h windows + distinct symbols per UTC month instead of "token buckets" (same reasoning as E2-T04), persisted in `<quota_dir>/tiingo_quota.json`, charged per symbol before the retry loop (retries free, as stooq); `last_close_per_period`/`PERIOD_FREQ` moved from stooq.py to base.py for reuse. Independent review: no blocking issues; added monthly-resampling and refused-batch-state assertions, fixed docstring style (broke `mkdocs --strict`), per-thread quota temp file |
 | E3-T01 | `EmissionFamily` protocol + GBM | M | 2 | E1-T03b, E1-T04 | done | 6434e40 | AC1-AC6 verified with real tests (scipy refs at 1e-12, Appendix E numbers, covariate zero/nonzero, 3-SE sampler moments, jit+grad, steps-clock); independent review caught a silent cross-series sigma-sharing gap under `constraint=increasing` + `n_series>1`, fixed (now `ConfigError`), plus a test-quality nit (AC2 read family's own `_mean_sd` instead of recomputing), fixed |
 | E3-T02 | Student-t emission | S | 2 | E3-T01 | todo | | |
 | E3-T03 | `DurationFamily` + geometric + negbin | M | 2 | E1-T03b, E1-T04 | done | 8a172b7 | AC1-AC6 verified with real tests (NumPy phase-chain sim vs 3 SE, negbin r=1 == geometric bitwise/1e-12, irregular dt, covariate zero/monotonic, Appendix E 4dp, steps clock + bitwise init_mean_sojourn_steps); independent review found no issues |
@@ -69,9 +69,9 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-Current: E2-T04 on `feat/E2-T04-fred-cboe-adapters`. Plan: `fred.py` (FredClient protocol + fredapi-backed
-client, sliding-window limiter 120/60 s), `cboe.py` (configurable `urls`, injectable downloader), synthetic
-cassettes, `tests/unit/test_e2_t04_fred_cboe.py`. Run budget 3: E2-T04 -> E2-T09 -> E2-T05.
+Current: E2-T09 on `feat/E2-T09-tiingo-adapter` (E2-T04 done, b08717f). Plan: stdlib-urllib Tiingo client (token in
+header), persisted quota (50/h, 1000/day rolling; 500 unique symbols per UTC month), resampling helper moved
+from stooq.py to base.py. Run budget 3: E2-T04 (done) -> E2-T09 -> E2-T05.
 
 Environment note: if `.venv` points at a missing interpreter, `uv sync --all-groups` repairs it. pandas is 3.x
 here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`).
@@ -287,7 +287,10 @@ here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`).
 - E2-T08: CBOE `urls` exist only as adapter kwargs (concept §5.6 says "URL patterns in config", but the config
   schema has no field for them); decide whether `fetch` exposes them or uses `DEFAULT_URLS`. Provider `api_key`
   kwargs (stooq, fred) are programmatic/test overrides only -- never map config values into them (CLAUDE.md §9).
-- `with_retries` retries every `ProviderError`, including non-transient ones raised by a downloader (e.g. HTTP 403 from a bad stooq key costs 5 attempts with backoff). Consider a non-retryable subclass if this matters in practice. Same for an invalid FRED key (HTTP 400 via fredapi `ValueError`): retried 5x before the user sees FRED's message.
+- E2-T08/E8-T02: stooq/tiingo quota files default to `~/.cache/regimekit`; whoever builds providers from config
+  should pass `quota_dir=cfg.data.cache.dir`. Quota read-modify-write (stooq, tiingo) is atomic per write but not
+  locked across processes (a concurrent update can be lost); fine for a CLI, revisit if fetches run in parallel.
+- `with_retries` retries every `ProviderError`, including non-transient ones raised by a downloader (e.g. HTTP 403 from a bad stooq key costs 5 attempts with backoff). Consider a non-retryable subclass if this matters in practice. Same for an invalid FRED key (HTTP 400 via fredapi `ValueError`): retried 5x before the user sees FRED's message. Tiingo 401/403/429 are retried too, and since retries are not charged the client-side quota can undercount Tiingo's tally (up to 5x per symbol in the worst case).
 
 ## Needs CI / network / GPU
 - E0-T03 AC1: "PR pipeline completes in < 10 minutes on the skeleton" needs a real GitHub Actions run (no
@@ -304,5 +307,7 @@ here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`).
 
 - E2-T04: the real `_FredApiClient` (fredapi, extra `providers`, not installed here) and `_download_cboe`
   (urllib) are `# pragma: no cover` and were not run against the live endpoints (`ALLOW_LIVE_NETWORK: no`).
+
+- E2-T09: the real `_download_tiingo` (urllib) is `# pragma: no cover` and was not run against the live API.
 
 ## Measurements

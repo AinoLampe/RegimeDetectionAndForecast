@@ -119,6 +119,17 @@ def clip_window(frame: pd.DataFrame, start: str, end: str | None) -> pd.DataFram
     return frame.loc[mask]
 
 
+PERIOD_FREQ: dict[str, str] = {"1wk": "W-SUN", "1mo": "M"}
+"""Intervals resampled from daily data by EOD-only adapters, as pandas period frequencies."""
+
+
+def last_close_per_period(close: pd.Series, interval: str) -> pd.Series:
+    """Last close of each week/month, labelled with the last actual trading timestamp of the period."""
+    keys = pd.DatetimeIndex(close.index).to_period(PERIOD_FREQ[interval])
+    is_last = np.append(np.asarray(keys[1:] != keys[:-1]), True)
+    return close[is_last]
+
+
 def infer_frequency(times: np.ndarray) -> str:
     """Map the median sampling gap to `"d"`, `"w"`, `"m"` or `"q"`."""
     if len(times) < 2:

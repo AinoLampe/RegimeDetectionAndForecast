@@ -83,3 +83,23 @@ extra dependency are needed.
 
 !!! warning "Terms of service"
     CBOE publishes index history for informational use under cboe.com's terms; do not redistribute it.
+
+## tiingo (optional, clean US end-of-day)
+
+`regimekit.finance.providers.tiingo.TiingoProvider` fetches US end-of-day prices from Tiingo's REST API. It
+uses only the Python standard library, so no extra dependency is needed and the adapter is always available.
+
+- **API key.** Set the environment variable `TIINGO_API_KEY`. Without it the adapter raises a
+  `ProviderError` with setup instructions *before* any network call. The key is sent in the `Authorization`
+  header (never in a URL) and is never logged or written to the quota file.
+- **Prices.** `adjusted=True` uses `adjClose`, `adjusted=False` uses `close`. Daily only
+  (`supports_intraday = False`); `1wk`/`1mo` are resampled from daily data like stooq (last close of each
+  period).
+- **Free-tier limits** are enforced client-side and persisted in `~/.cache/regimekit/tiingo_quota.json`
+  (shared by every adapter instance and process): 50 requests in any rolling hour (`max_per_hour`), 1000 in
+  any rolling 24 hours (`max_per_day`), and 500 distinct symbols per UTC calendar month
+  (`max_symbols_per_month`). One request is charged per symbol before downloading; a batch that would exceed
+  a limit is refused whole with a `ProviderError`. Retries are not charged.
+
+!!! warning "Terms of service"
+    Tiingo data is licensed for the account holder's own use under tiingo.com's terms; do not redistribute it.
