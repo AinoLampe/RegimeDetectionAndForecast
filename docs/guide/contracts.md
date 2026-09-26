@@ -45,3 +45,35 @@ Only `regimekit.data.contracts` may be imported from `model`, `statespace`, `eng
   fresh at the start of the grid. A monthly macro series
   therefore becomes a step function; give it a `max_staleness` of about one month of grid steps and
   a `lag` that covers its publication delay.
+
+## Preparation
+
+`regimekit.data.prepare.Preparer(cfg.data)` builds the `PreparedDataset`, sklearn-style:
+`Preparer(cfg).fit(obs, covs, train_end).transform(obs, covs)`. Covariate series are passed in
+`data.covariates` order; each series id must match the configured `series`.
+
+1. The master grid and `Δ_t` come from `build_grid` (see above). Observations are the log-returns
+   `log(P_t / P_{t-1})` (`transforms.log_returns`). `mask = isfinite(y)`, and masked values are set
+   to 0.
+2. Covariate transforms (`log`, `diff`, `pct`) run in declared order on the series' own prints.
+   Prints are sorted by time, and a duplicated timestamp keeps the last (revised) print. Non-finite
+   prints are skipped, so `diff` spans a holiday. `log` of a non-positive value and `pct` after a
+   zero print are `DataError`s. The covariate is then aligned, lagged and forward-filled up to
+   `max_staleness`.
+3. Warm-up: leading rows are trimmed until every covariate has its first usable value. Rows lost
+   to the lag shift and to each `diff`/`pct` are trimmed under every policy. A covariate that
+   starts later than that (for example a series beginning after the primary) raises under
+   `missing: error` and is trimmed with a logged warning otherwise.
+4. Remaining NaN is handled by the covariate's `missing` policy. `error` raises a `DataError`
+   naming the observation's end time. `drop` removes the row. `ffill` has already filled up to
+   `max_staleness`, and rows still NaN after that are dropped. Drops are joint: returns, `dt`,
+   `mask`, `times` and all covariate blocks stay aligned.
+5. Standardization (`preparation.standardize_covariates`) uses the mean and std (ddof 0) of the
+   rows whose end time is `<= train_end` (compared in UTC). Those statistics are stored in
+   `PrepStats` and applied to every window `transform` sees. A train-window std below `1e-12` is a `DataError`. The
+   `zscore` transform is a deprecated alias that turns on standardization for that covariate and
+   emits a `FutureWarning`.
+6. Covariate columns are split into `cov_transition`/`cov_duration`/`cov_emission` by `use_in`. A
+   covariate may appear in several blocks. An unused entry point is `None`.
+
+`prep_stats_to_json` / `prep_stats_from_json` serialize `PrepStats`; the round trip is exact.
