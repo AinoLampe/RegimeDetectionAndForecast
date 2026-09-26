@@ -6,17 +6,23 @@
 
 Created by E1-T02a, which is the first ticket needing a days->steps conversion (to size
 `model.d_max`'s default from `init_mean_sojourn_days`), ahead of E2-T06/E3-T04 in build order.
-Those tickets add `future_grid`/`is_irregular` here rather than recreating this module.
+E2-T06 added `is_irregular`; E6-T04a adds `future_grid` here rather than recreating this module.
 """
 
 from __future__ import annotations
 
 from typing import Literal
 
+import numpy as np
+from numpy.typing import ArrayLike
+
+from regimekit.utils.errors import DataError
+
 Clock = Literal["trading", "calendar", "steps"]
 
 TRADING_DAYS_PER_YEAR = 252
 CALENDAR_DAYS_PER_YEAR = 365.25
+IRREGULAR_RATIO = 1.5
 
 
 def days_to_steps(days: float, clock: Clock, nominal_dt: float, bars_per_day: int) -> float:
@@ -31,3 +37,18 @@ def days_to_steps(days: float, clock: Clock, nominal_dt: float, bars_per_day: in
         return days
     days_per_year = TRADING_DAYS_PER_YEAR if clock == "trading" else CALENDAR_DAYS_PER_YEAR
     return (days / days_per_year) * bars_per_day / nominal_dt
+
+
+def is_irregular(dt: ArrayLike) -> bool:
+    """Whether a `Δ_t` grid counts as irregular: `max Δ_t / min Δ_t > 1.5` (concept §4.1).
+
+    The explicit-duration engine assumes a regular grid and warns when this holds (ADR-0007).
+    Always `False` under `clock="steps"` (`Δ_t ≡ 1`).
+
+    Raises:
+        DataError: `dt` is empty or not strictly positive.
+    """
+    arr = np.asarray(dt, dtype=np.float64)
+    if arr.size == 0 or not bool(np.all(arr > 0)):
+        raise DataError("dt must be non-empty and > 0 everywhere", path="dt")
+    return bool(arr.max() / arr.min() > IRREGULAR_RATIO)

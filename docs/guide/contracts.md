@@ -20,3 +20,28 @@ observations where observed, mismatched covariate metadata, or out-of-range boun
 
 Only `regimekit.data.contracts` may be imported from `model`, `statespace`, `engine`,
 `estimation`, or `inference` — enforced by an AST-based layer-rule test (ADR-0012).
+
+## Calendar and alignment
+
+`regimekit.data.calendar` turns raw provider data into the time axis of a `PreparedDataset`:
+
+- **Master grid.** `build_grid(obs, missing_returns, clock=..., bars_per_day=...)` takes the primary
+  instrument's timestamps `τ_0 < … < τ_T`. Under `missing_returns: drop`, every row where any series
+  has a missing price is removed. Under `error`, the first such row raises a `DataError`. Observation
+  `t` covers `(τ_{t-1}, τ_t]`, so a grid of `T + 1` times yields `T` observations.
+- **`Δ_t` per clock.** `trading`: `1 / (252 · bars_per_day)` years, constant (holidays and weekends
+  do not lengthen a step). `calendar`: elapsed days / 365.25, so a Thursday → Monday holiday gap
+  gives `4/365.25`. `steps`: `1.0` everywhere (ADR-0013). `nominal_dt = median(Δ_t)`. The grid is
+  flagged `irregular` when `max Δ_t / min Δ_t > 1.5`, which a daily calendar clock is because of
+  weekends. The explicit-duration engine warns on irregular grids (ADR-0007).
+- **Covariates.** `align_covariate` takes, for each grid time, the last non-NaN print dated at or
+  before it (as `merge_asof(direction="backward")` would). It then shifts the result by `lag ≥ 1`
+  grid steps, so observation `(τ_t, τ_{t+1}]` sees the value as of `τ_{t+1-lag}` and never a print
+  dated after its start. After that, values are carried forward for at most `max_staleness` grid
+  steps from the step where the print became visible; older values become NaN, and E2-T07's
+  missing policy decides what happens to them. The staleness counter (`0` = fresh, `-1` = no print
+  yet) is returned alongside the values for the data-quality report. A print dated before the
+  first grid time is aged in median grid spacings, so a long-discontinued series is not treated as
+  fresh at the start of the grid. A monthly macro series
+  therefore becomes a step function; give it a `max_staleness` of about one month of grid steps and
+  a `lag` that covers its publication delay.
