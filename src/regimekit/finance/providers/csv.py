@@ -12,10 +12,10 @@ from regimekit.data.contracts import CovariateSeries, ObservationSet
 from regimekit.finance.providers.base import (
     check_interval,
     clean_frame,
+    clip_window,
     infer_frequency,
     register,
     to_utc_ns,
-    window_bounds,
 )
 from regimekit.utils.errors import ProviderError
 
@@ -32,14 +32,6 @@ def _read(path: Path, required: tuple[str, ...], what: str) -> pd.DataFrame:
         raise ProviderError(f"{path.name} is missing columns {missing}", path=what)
     raw.index = pd.DatetimeIndex(to_utc_ns(raw["time"]))
     return clean_frame(raw.drop(columns="time"))
-
-
-def _clip(frame: pd.DataFrame, start: str, end: str | None) -> pd.DataFrame:
-    lo, hi = window_bounds(start, end)
-    mask = np.asarray(frame.index.values >= lo)
-    if hi is not None:
-        mask &= np.asarray(frame.index.values < hi)
-    return frame.loc[mask]
 
 
 @register
@@ -70,7 +62,7 @@ class CsvProvider:
         columns = []
         for sym in symbols:
             frame = _read(self.root / f"{sym}.csv", ("time", column), sym)
-            columns.append(_clip(frame, start, end)[column].astype("float64").rename(sym))
+            columns.append(clip_window(frame, start, end)[column].astype("float64").rename(sym))
         joined = pd.concat(columns, axis=1, join="outer", sort=True)
         return ObservationSet(
             symbols=tuple(symbols),
@@ -84,7 +76,7 @@ class CsvProvider:
 
     def fetch_series(self, series_id: str, start: str, end: str | None) -> CovariateSeries:
         """Read `<root>/<series_id>.csv` with columns `time, value`."""
-        frame = _clip(_read(self.root / f"{series_id}.csv", ("time", "value"), series_id), start, end)
+        frame = clip_window(_read(self.root / f"{series_id}.csv", ("time", "value"), series_id), start, end)
         times = np.asarray(frame.index.values, dtype="datetime64[ns]")
         return CovariateSeries(
             name=series_id,

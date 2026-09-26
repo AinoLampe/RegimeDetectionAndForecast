@@ -1,7 +1,17 @@
-"""Market-data provider adapters (yfinance, stooq, fred, cboe, tiingo) and their registry."""
+"""Market-data provider adapters (yfinance, stooq, fred, cboe, tiingo) and their registry.
 
-from regimekit.finance.providers import csv as _csv  # noqa: F401  (registers "csv")
+Importing a provider class registers it under its `name`.
+"""
+
 from regimekit.finance.providers.base import DataProvider, get_provider, register, registered_providers
 from regimekit.finance.providers.csv import CsvProvider
+from regimekit.finance.providers.yfinance import YFinanceProvider
 
-__all__ = ["CsvProvider", "DataProvider", "get_provider", "register", "registered_providers"]
+__all__ = [
+    "CsvProvider",
+    "DataProvider",
+    "YFinanceProvider",
+    "get_provider",
+    "register",
+    "registered_providers",
+]

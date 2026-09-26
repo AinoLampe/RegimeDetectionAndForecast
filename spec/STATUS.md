@@ -17,7 +17,7 @@
 | E1-T04 | Distributions (`dists`) | M | 1 | E0-T05 | done | c4bb1e1 | AC1-AC5 verified with real tests vs scipy; independent review caught a fragile skip-heavy AC3 test, fixed to rejection-sample instead |
 | E1-T05 | Model-side contracts | S | 1 | E1-T03b | done | b4c7639 | AC1-AC3 verified (mypy --strict passes with Protocol stubs; collapse helpers verified on a hand-built 2-regime, 3-phase StateIndex); independent review found no blocking issues, one follow-up logged |
 | E2-T01 | Provider protocol, registry, csv adapter, contract suite | M | 2 | E1-T01 | done | eaf3440 | AC1-AC3 verified with real tests (shared contract helper `tests/finance/provider_contract.py` run against CsvProvider; registry duplicate/unknown; `with_retries` exact-attempts + backoff). Choices: `adj_close` required only when `adjusted=True`; date-only `end` covers the whole day; symbols outer-joined on time with NaN padding; `frequency` inferred from median gap (`d/w/m/q`); ISO8601 timestamps, naive = UTC. Independent review: no blocking issues; added non-UTF-8 -> `ProviderError` and a `1wk` interval-echo check |
-| E2-T02 | yfinance adapter | M | 2 | E2-T01 | todo | | |
+| E2-T02 | yfinance adapter | M | 2 | E2-T01 | done | PENDING | AC1/AC2/AC4 verified with real tests against synthetic `^GDAXI` parquet cassettes (1d naive index, 1h Europe/Berlin tz-aware -> UTC), injectable downloader/clock/sleep/today; AC3 (live) written but skipped here (yfinance not installed, network off) -> see Needs CI/network. Docs go to the existing `docs/guide/providers.md` (ticket says `data_providers.md`; the nav already points at providers.md). `clip_window` moved from csv.py into base.py and the contract helper gained an `interval=` parameter. Independent review: no blocking issues; fixed missing-extra being retried 5x and a window wholly beyond the intraday cap (now a clear `ProviderError`) |
 | E2-T03 | stooq adapter | S | 2 | E2-T01 | todo | | |
 | E2-T04 | fred + cboe adapters | M | 2 | E2-T01 | todo | | |
 | E2-T05 | Parquet cache, snapshot IDs, offline replay | M | 2 | E2-T01 | todo | | |
@@ -306,5 +306,7 @@ golden tests should compare against `tests/reference/ref_hmm.py` (built this run
   (universal resolution, confirmed in `uv.lock`).
 - E0-T01 AC1: "succeeds on Linux and WSL2" — verified functionally equivalent on Windows/uv 0.11.17 instead;
   needs a Linux/WSL2 run to fully close per the ticket's literal wording.
+
+- E2-T02 AC3: `tests/live/test_e2_t02_yfinance_live.py` (`-m live`, needs network and `uv sync --extra providers`). The real `_download_yfinance` (incl. the curl_cffi session and `yf.download` call) is `# pragma: no cover` and unverified here; `extract_close` (the frame post-processing) is unit-tested for both column layouts.
 
 ## Measurements

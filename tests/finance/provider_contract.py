@@ -20,7 +20,12 @@ def _check_times(times: np.ndarray) -> None:
 
 
 def check_price_contract(
-    provider: DataProvider, symbols: list[str], start: str, end: str, unknown: str = "NOPE"
+    provider: DataProvider,
+    symbols: list[str],
+    start: str,
+    end: str,
+    unknown: str = "NOPE",
+    interval: str = "1d",
 ) -> None:
     """Assert the `fetch_prices` contract for any adapter."""
     assert isinstance(provider.tos_note, str)
@@ -28,29 +33,30 @@ def check_price_contract(
     assert isinstance(provider.name, str)
     assert provider.name
     for adjusted in (False, True):
-        obs = provider.fetch_prices(symbols, start, end, "1d", adjusted)
+        obs = provider.fetch_prices(symbols, start, end, interval, adjusted)
         assert isinstance(obs, ObservationSet)
         _check_times(obs.times)
         assert obs.prices.dtype == np.float64
         assert obs.prices.shape == (len(obs.times), len(symbols))
         assert obs.symbols == tuple(symbols)
-        assert obs.interval == "1d"
+        assert obs.interval == interval
         assert obs.adjusted is adjusted
         assert obs.provider == provider.name
         assert obs.snapshot_id == ""
         assert obs.times[0] >= np.datetime64(start, "ns")
         assert obs.times[-1] < np.datetime64(end, "ns") + np.timedelta64(1, "D")
-    assert provider.fetch_prices(symbols, start, end, "1wk", False).interval == "1wk"
-    raw = provider.fetch_prices(symbols, start, end, "1d", False)
-    adj = provider.fetch_prices(symbols, start, end, "1d", True)
+    raw = provider.fetch_prices(symbols, start, end, interval, False)
+    adj = provider.fetch_prices(symbols, start, end, interval, True)
     assert not np.array_equal(raw.prices, adj.prices, equal_nan=True), "adjusted flag must change the prices"
     with pytest.raises(ProviderError):
-        provider.fetch_prices([unknown], start, end, "1d", False)
+        provider.fetch_prices([unknown], start, end, interval, False)
 
 
-def check_window_inclusive(provider: DataProvider, symbol: str, first: str, last: str) -> None:
+def check_window_inclusive(
+    provider: DataProvider, symbol: str, first: str, last: str, interval: str = "1d"
+) -> None:
     """`[first, last]` must be returned with both boundary timestamps present."""
-    obs = provider.fetch_prices([symbol], first, last, "1d", False)
+    obs = provider.fetch_prices([symbol], first, last, interval, False)
     assert obs.times[0] == np.datetime64(first, "ns")
     assert obs.times[-1] == np.datetime64(last, "ns")
 

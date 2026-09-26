@@ -109,6 +109,15 @@ def window_bounds(start: str, end: str | None) -> tuple[np.datetime64, np.dateti
     return lo, hi
 
 
+def clip_window(frame: pd.DataFrame, start: str, end: str | None) -> pd.DataFrame:
+    """Keep the rows of a `DatetimeIndex`-ed frame inside the inclusive `[start, end]` window."""
+    lo, hi = window_bounds(start, end)
+    mask = np.asarray(frame.index.values >= lo)
+    if hi is not None:
+        mask &= np.asarray(frame.index.values < hi)
+    return frame.loc[mask]
+
+
 def infer_frequency(times: np.ndarray) -> str:
     """Map the median sampling gap to `"d"`, `"w"`, `"m"` or `"q"`."""
     if len(times) < 2:

@@ -37,6 +37,7 @@ def test_e2_t01_csv_passes_price_contract_suite(provider: CsvProvider) -> None:
     """AC1: the shared price contract suite passes, incl. inclusive window bounds."""
     check_price_contract(provider, ["DEMO"], "2020-01-02", "2020-01-10")
     check_window_inclusive(provider, "DEMO", "2020-01-03", "2020-01-09")
+    check_price_contract(provider, ["DEMO"], "2020-01-02", "2020-01-10", interval="1wk")
 
 
 def test_e2_t01_csv_passes_series_contract_suite(provider: CsvProvider) -> None:
