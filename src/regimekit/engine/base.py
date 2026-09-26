@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from regimekit.data.contracts import PreparedDataset
     from regimekit.model.params import Params
     from regimekit.model.spec import ModelSpec
+    from regimekit.statespace.index import StateSpace
 
 
 @dataclass(frozen=True)
@@ -95,22 +96,26 @@ jax.tree_util.register_pytree_node(Posterior, _flatten_posterior, _unflatten_pos
 class InferenceEngine(Protocol):
     """Structural type for the expanded/explicit-duration inference engines (E4-T03*/E4-T06*)."""
 
-    def loglik(self, theta: Params, data: PreparedDataset, spec: ModelSpec) -> Array:
+    def loglik(self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
         """`log p(y_1:T)`, a 0-d `Array` (a pytree leaf)."""
         ...
 
-    def forward(self, theta: Params, data: PreparedDataset, spec: ModelSpec) -> Array:
-        """The forward recursion's `log_alpha`, shape `(T, S)`."""
+    def forward(
+        self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
+    ) -> tuple[Array, Array]:
+        """`(log_alpha (T, S), loglik)`."""
         ...
 
-    def forward_backward(self, theta: Params, data: PreparedDataset, spec: ModelSpec) -> Posterior:
+    def forward_backward(
+        self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
+    ) -> Posterior:
         """Full forward-backward, returning a `Posterior`."""
         ...
 
-    def viterbi(self, theta: Params, data: PreparedDataset, spec: ModelSpec) -> Array:
+    def viterbi(self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
         """The most likely expanded-state path, shape `(T,)`."""
         ...
 
-    def approx(self, theta: Params, data: PreparedDataset, spec: ModelSpec) -> Posterior:
-        """Approximate inference (factorial models, ADR-0008); unimplemented until E9-T02."""
+    def approx(self) -> object | None:
+        """Approximate-inference plug-in (FR-X01, ADR-0008); `None` for exact engines."""
         ...
