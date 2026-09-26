@@ -46,3 +46,40 @@ impersonate a browser session).
 
 !!! warning "Terms of service"
     Stooq data is for personal use under stooq.com's terms; do not redistribute it.
+
+## fred (macro and volatility covariates)
+
+`regimekit.finance.providers.fred.FredProvider` fetches covariate series such as `VIXCLS` (VIX close) and
+`T10Y2Y` (10y-2y Treasury spread) from FRED. The default client uses `fredapi` (`uv sync --extra providers`).
+
+- **API key.** Set the environment variable `FRED_API_KEY` (free at fredaccount.stlouisfed.org). Without it
+  the adapter raises a `ProviderError` with setup instructions *before* any network call. The key is never
+  logged and never appears in errors.
+- **Values.** FRED marks missing observations (e.g. market holidays) with `"."`; these become `NaN`. How NaN
+  is filled is decided later by the covariate's `missing`/`max_staleness` settings.
+- **Times and frequency.** Observation dates are returned as UTC midnight. `frequency` is taken from FRED's
+  series metadata (`D`, `W`, `M`, `Q` -> `d`, `w`, `m`, `q`); other frequencies (annual, semiannual,
+  biweekly) raise `ProviderError`. Alignment and publication lag are applied by the data preparation.
+- **Rate limit.** At most 120 requests in any rolling 60-second window, shared by all adapter instances in
+  the process; each fetch makes two requests (metadata, observations) and retries count too. Excess calls
+  wait rather than fail.
+- `fetch_prices` raises `ProviderError`: FRED is not a price provider.
+
+!!! warning "Terms of service"
+    FRED data is provided by the Federal Reserve Bank of St. Louis under its terms of use, and some series
+    carry third-party copyrights. Do not redistribute it.
+
+## cboe (VIX / VVIX history files)
+
+`regimekit.finance.providers.cboe.CboeProvider` reads CBOE's daily index history CSV files. No API key and no
+extra dependency are needed.
+
+- **Series.** A `series_id` is a key of the adapter's `urls` mapping. The defaults (`DEFAULT_URLS`) are
+  `VIX_History.csv` and `VVIX_History.csv` on `cdn.cboe.com`; pass `urls={...}` to point at other files or
+  mirrors (this replaces the defaults). Unknown ids raise `ProviderError` without a network call.
+- **Values.** Files with `DATE, OPEN, HIGH, LOW, CLOSE` use `CLOSE`; single-value files such as
+  `DATE, VVIX` use that column. Dates (`MM/DD/YYYY`) become UTC midnight; `frequency` is `"d"`.
+- Downloads are retried (5 attempts) and spaced at least 0.5 s apart. `fetch_prices` raises `ProviderError`.
+
+!!! warning "Terms of service"
+    CBOE publishes index history for informational use under cboe.com's terms; do not redistribute it.

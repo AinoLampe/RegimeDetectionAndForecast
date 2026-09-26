@@ -1,0 +1,11 @@
+{
+ "seriess": [
+  {
+   "id": "T10Y2Y",
+   "title": "10-Year Minus 2-Year Treasury Yield Spread (synthetic fixture)",
+   "frequency": "Daily",
+   "frequency_short": "D",
+   "units": "Percent"
+  }
+ ]
+}

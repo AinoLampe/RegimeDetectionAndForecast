@@ -19,7 +19,7 @@
 | E2-T01 | Provider protocol, registry, csv adapter, contract suite | M | 2 | E1-T01 | done | eaf3440 | AC1-AC3 verified with real tests (shared contract helper `tests/finance/provider_contract.py` run against CsvProvider; registry duplicate/unknown; `with_retries` exact-attempts + backoff). Choices: `adj_close` required only when `adjusted=True`; date-only `end` covers the whole day; symbols outer-joined on time with NaN padding; `frequency` inferred from median gap (`d/w/m/q`); ISO8601 timestamps, naive = UTC. Independent review: no blocking issues; added non-UTF-8 -> `ProviderError` and a `1wk` interval-echo check |
 | E2-T02 | yfinance adapter | M | 2 | E2-T01 | done | 350e244 | AC1/AC2/AC4 verified with real tests against synthetic `^GDAXI` parquet cassettes (1d naive index, 1h Europe/Berlin tz-aware -> UTC), injectable downloader/clock/sleep/today; AC3 (live) written but skipped here (yfinance not installed, network off) -> see Needs CI/network. Docs go to the existing `docs/guide/providers.md` (ticket says `data_providers.md`; the nav already points at providers.md). `clip_window` moved from csv.py into base.py and the contract helper gained an `interval=` parameter. Independent review: no blocking issues; fixed missing-extra being retried 5x and a window wholly beyond the intraday cap (now a clear `ProviderError`) |
 | E2-T03 | stooq adapter | S | 2 | E2-T01 | done | e3fe734 | AC1-AC3 verified with real tests (contract suite for `1d` and resampled `1wk` against a synthetic parquet cassette; missing key -> no downloader call and no quota file; quota persisted across instances, daily reset, oversized requests refused uncharged). Choices: direct CSV endpoint via injectable downloader (no `pandas-datareader` dependency); quota is a persisted daily counter charged per symbol before the retry loop (retries free); `adjusted` echoed but ineffective (stooq is split-adjusted only) so the contract helper gained `adjusted_changes_prices=`; symbol table limited to the two mandated mappings + passthrough; docs in `docs/guide/providers.md` |
-| E2-T04 | fred + cboe adapters | M | 2 | E2-T01 | todo | | |
+| E2-T04 | fred + cboe adapters | M | 2 | E2-T01 | done | COMMIT | AC1 `test_e2_t04_{fred,cboe}_passes_series_contract` (VIXCLS, T10Y2Y, VIX_History.csv + VVIX single-column layout); AC2 `test_e2_t04_fred_dot_values_become_nan` (exactly 2 NaN at the holiday dates); AC3 `test_e2_t04_limiter_blocks_the_121st_call_within_a_minute` + end-to-end `..._fred_requests_go_through_the_limiter` (fake clock); AC4 `..._fred_missing_key_raises_without_network`. Choices: rolling-window `RateLimiter` (in `finance/providers/base.py`) instead of the ticket's "token bucket" wording -- a refilling bucket admits up to ~240 requests in some 60-s window, violating the concept's "120 req/min"; one shared window per process, 2 requests per fetch (metadata + observations), retries count. FRED frequencies other than D/W/M/Q -> `ProviderError`. CBOE: `urls` adapter kwarg (defaults VIX/VVIX on cdn.cboe.com), `CLOSE` or the single value column (VVIX file is `DATE,VVIX`). Independent review: no blocking issues; added a missing-extra test, a limiter docstring caveat, clearer FRED `ValueError` messages |
 | E2-T05 | Parquet cache, snapshot IDs, offline replay | M | 2 | E2-T01 | todo | | |
 | E2-T06 | Calendar, Δ, alignment, lagging | M | 2 | E1-T01 | todo | | |
 | E2-T07 | `Preparer` fit/transform | M | 2 | E2-T06 | todo | | |
@@ -69,19 +69,12 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-No ticket in progress; `main` is clean and `nox -s lint types tests docs` is green (533 passed, 1 skipped = the
-opt-in live yfinance test, coverage 97.8 %).
+Current: E2-T04 on `feat/E2-T04-fred-cboe-adapters`. Plan: `fred.py` (FredClient protocol + fredapi-backed
+client, sliding-window limiter 120/60 s), `cboe.py` (configurable `urls`, injectable downloader), synthetic
+cassettes, `tests/unit/test_e2_t04_fred_cboe.py`. Run budget 3: E2-T04 -> E2-T09 -> E2-T05.
 
-Run 2026-09-26 (budget 3): E2-T01, E2-T02, E2-T03 done (finance providers: protocol/registry/csv, yfinance,
-stooq). Step 1 ordering was applied strictly (lowest phase first), so remaining Phase 2 tickets come before
-E4-T03a even though the previous handoff named E4-T03a next.
-
-Next eligible, in Step 1 order: E2-T04 (fred + cboe), E2-T09 (tiingo), E2-T05 (cache; deps E2-T01 only),
-E2-T06 (calendar; adds `future_grid`/`is_irregular` to `utils/clock.py`), E2-T07, E3-T02, E3-T04, E3-T06;
-then Phase 3 E4-T03a (critical path) -> E4-T03b. E4-T06a needs E3-T04 first.
-
-Environment note: at session start `.venv` pointed at a missing uv-managed interpreter; `uv sync --all-groups`
-repaired it. pandas is 3.x here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`).
+Environment note: if `.venv` points at a missing interpreter, `uv sync --all-groups` repairs it. pandas is 3.x
+here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`).
 
 ## Blocked / needs owner
 
@@ -291,7 +284,10 @@ repaired it. pandas is 3.x here: pass `format="ISO8601"` for mixed timestamp str
 ## Follow-ups
 - E2-T05: providers return `snapshot_id=""` and the cache fills it; `CacheableProvider` Protocol goes in `data/cache.py` (CLAUDE.md §3.2). `DataProvider` (finance/providers/base.py) is the structural match.
 - E2-T04/E2-T09: reuse `with_retries`, `throttle`, `clip_window`, `infer_frequency` from `finance/providers/base.py`; follow the injectable-downloader + parquet-cassette pattern of E2-T02/T03 (`tests/fixtures/cassettes/<provider>/make_cassettes.py`). `check_price_contract`/`check_series_contract` live in `tests/finance/provider_contract.py`.
-- `with_retries` retries every `ProviderError`, including non-transient ones raised by a downloader (e.g. HTTP 403 from a bad stooq key costs 5 attempts with backoff). Consider a non-retryable subclass if this matters in practice.
+- E2-T08: CBOE `urls` exist only as adapter kwargs (concept §5.6 says "URL patterns in config", but the config
+  schema has no field for them); decide whether `fetch` exposes them or uses `DEFAULT_URLS`. Provider `api_key`
+  kwargs (stooq, fred) are programmatic/test overrides only -- never map config values into them (CLAUDE.md §9).
+- `with_retries` retries every `ProviderError`, including non-transient ones raised by a downloader (e.g. HTTP 403 from a bad stooq key costs 5 attempts with backoff). Consider a non-retryable subclass if this matters in practice. Same for an invalid FRED key (HTTP 400 via fredapi `ValueError`): retried 5x before the user sees FRED's message.
 
 ## Needs CI / network / GPU
 - E0-T03 AC1: "PR pipeline completes in < 10 minutes on the skeleton" needs a real GitHub Actions run (no
@@ -305,5 +301,8 @@ repaired it. pandas is 3.x here: pass `format="ISO8601"` for mixed timestamp str
   needs a Linux/WSL2 run to fully close per the ticket's literal wording.
 
 - E2-T02 AC3: `tests/live/test_e2_t02_yfinance_live.py` (`-m live`, needs network and `uv sync --extra providers`). The real `_download_yfinance` (incl. the curl_cffi session and `yf.download` call) is `# pragma: no cover` and unverified here; `extract_close` (the frame post-processing) is unit-tested for both column layouts.
+
+- E2-T04: the real `_FredApiClient` (fredapi, extra `providers`, not installed here) and `_download_cboe`
+  (urllib) are `# pragma: no cover` and were not run against the live endpoints (`ALLOW_LIVE_NETWORK: no`).
 
 ## Measurements

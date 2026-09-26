@@ -6,6 +6,7 @@ the raw bytes it stores.
 
 from __future__ import annotations
 
+import collections
 import functools
 import threading
 import time
@@ -181,3 +182,48 @@ def throttle[T](
         return wrapper
 
     return decorator
+
+
+class RateLimiter:
+    """At most `max_calls` requests in any rolling `period_s` window (in-process, thread-safe).
+
+    `acquire()` blocks (via the injectable `sleep`) until the oldest of the last `max_calls` requests has
+    left the window. A rolling window, unlike a refilling token bucket, never lets more than `max_calls`
+    requests through in *any* window of length `period_s`.
+
+    Args:
+        max_calls: Requests allowed per window (>= 1).
+        period_s: Window length in seconds (> 0).
+        clock: Injectable monotonic clock in seconds.
+        sleep: Injectable sleep, so tests never wait. An injected `sleep` must advance the injected `clock`,
+            otherwise a full window never drains and `acquire()` loops forever.
+    """
+
+    def __init__(
+        self,
+        max_calls: int,
+        period_s: float,
+        clock: Callable[[], float] = time.monotonic,
+        sleep: Callable[[float], None] = time.sleep,
+    ) -> None:
+        """Create an empty window."""
+        if max_calls < 1 or period_s <= 0:
+            raise ProviderError("RateLimiter needs max_calls >= 1 and period_s > 0", path="max_calls")
+        self.max_calls = max_calls
+        self.period_s = period_s
+        self._clock = clock
+        self._sleep = sleep
+        self._lock = threading.Lock()
+        self._expiries: collections.deque[float] = collections.deque()  # call time + period, ascending
+
+    def acquire(self) -> None:
+        """Record one request, first waiting until the window has room for it."""
+        with self._lock:
+            while True:
+                now = self._clock()
+                while self._expiries and self._expiries[0] <= now:
+                    self._expiries.popleft()
+                if len(self._expiries) < self.max_calls:
+                    break
+                self._sleep(self._expiries[0] - now)
+            self._expiries.append(now + self.period_s)

@@ -1,0 +1,11 @@
+{
+ "seriess": [
+  {
+   "id": "VIXCLS",
+   "title": "CBOE Volatility Index: VIX (synthetic fixture)",
+   "frequency": "Daily",
+   "frequency_short": "D",
+   "units": "Index"
+  }
+ ]
+}
