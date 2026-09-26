@@ -26,8 +26,12 @@ def check_price_contract(
     end: str,
     unknown: str = "NOPE",
     interval: str = "1d",
+    adjusted_changes_prices: bool = True,
 ) -> None:
-    """Assert the `fetch_prices` contract for any adapter."""
+    """Assert the `fetch_prices` contract for any adapter.
+
+    Set `adjusted_changes_prices=False` for providers with a single adjustment convention.
+    """
     assert isinstance(provider.tos_note, str)
     assert provider.tos_note.strip()
     assert isinstance(provider.name, str)
@@ -47,7 +51,8 @@ def check_price_contract(
         assert obs.times[-1] < np.datetime64(end, "ns") + np.timedelta64(1, "D")
     raw = provider.fetch_prices(symbols, start, end, interval, False)
     adj = provider.fetch_prices(symbols, start, end, interval, True)
-    assert not np.array_equal(raw.prices, adj.prices, equal_nan=True), "adjusted flag must change the prices"
+    if adjusted_changes_prices:
+        assert not np.array_equal(raw.prices, adj.prices, equal_nan=True), "adjusted flag must change prices"
     with pytest.raises(ProviderError):
         provider.fetch_prices([unknown], start, end, interval, False)
 

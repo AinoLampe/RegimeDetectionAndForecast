@@ -26,3 +26,23 @@ impersonate a browser session).
 !!! warning "Terms of service"
     Yahoo! data is licensed for personal, non-commercial use. regimekit never commits or redistributes it
     (ADR-0002); keep your local cache private and check Yahoo's current terms before any other use.
+
+## stooq (daily fallback, EU coverage)
+
+`regimekit.finance.providers.stooq.StooqProvider` is an end-of-day fallback for when Yahoo is unavailable.
+
+- **API key.** Set the environment variable `STOOQ_API_KEY`. Without it the adapter raises a `ProviderError`
+  with setup instructions *before* any network call. The key is never logged and never appears in errors.
+- **Intervals.** Daily only (`supports_intraday = False`; `1h` raises). `1wk` and `1mo` are resampled from
+  daily data as the last close of each period, labelled with the last actual trading date; `meta` records
+  the resampling. The `[start, end]` window is applied to the daily data first, so a period cut by the
+  window edge yields a partial first or last bar.
+- **Adjustment.** Stooq closes are split-adjusted only, so `adjusted` is echoed but does not change prices.
+- **Quota.** A client-side counter (default 100 calls per UTC day, `max_calls_per_day`) is persisted in
+  `~/.cache/regimekit/stooq_quota.json` and shared by every adapter instance. One call is charged per
+  symbol; retries are free. Exceeding it raises `ProviderError("stooq quota ...")`. Cache aggressively.
+- **Symbols.** Yahoo-style names are mapped (`^GDAXI` -> `^dax`, `^GSPC` -> `^spx`, see `STOOQ_SYMBOLS`);
+  anything else is passed through unchanged. Results keep the names you asked for.
+
+!!! warning "Terms of service"
+    Stooq data is for personal use under stooq.com's terms; do not redistribute it.
