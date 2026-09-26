@@ -30,3 +30,11 @@ $$
 Invariants used by the tests: $\operatorname{logsumexp}_s(\log\alpha_t + \log\beta_t) = \log p(y_{1:T})$ for every $t$, and
 the log-likelihood does not depend on the ordering of the expanded states. Structural zeros ($-\infty$) are masked
 before `exp`, and a `logsumexp` over an all-$-\infty$ slice returns $-\infty$ with a zero gradient.
+
+## Augmented posterior summaries
+
+`engine/augmented.py` buckets the smoothed posterior by `(regime, phase)` (`phase_marginals`, `(T, N, r_max)`) and by
+memory row (`memory_marginals`, `(T, R)`). For the negative-binomial phase chain, in phase $c$ of $r_i$ the expected
+remaining sojourn is $(r_i - c + 1)/a_i(t)$ steps, and the phase-based lower bound on the elapsed time is
+$(c - 1)/a_i(t)$; both are averaged over the phase marginals conditional on regime $i$ (0 where the regime has no mass).
+Exact elapsed-duration posteriors come from the explicit-duration engine.

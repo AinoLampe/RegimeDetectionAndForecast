@@ -1,17 +1,15 @@
 """`Posterior` (pytree-registered) and the `InferenceEngine` protocol stub (E1-T05).
 
-`Posterior.engine` (a static `Literal["expanded", "explicit"]` dispatch tag) is added by E4-T04,
-not here; `elapsed_posterior()` below is a single engine-agnostic implementation (bucketing
-`smoothed` mass by `(regime_of, phase_of)`) that E4-T04 may refine into real per-engine dispatch.
+`Posterior.engine` is a static `Literal["expanded", "explicit"]` tag (E4-T04); the utilities in
+`engine/augmented.py` operate on `Posterior`.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 import jax
-import jax.numpy as jnp
 
 from regimekit.statespace.index import StateIndex
 from regimekit.utils.typing import Array
@@ -53,6 +51,7 @@ class Posterior:
     smoothed: Array  # (T, S)
     loglik: Array  # 0-d Array (a pytree leaf; PosteriorResult/FitResult.loglik are plain float)
     index: StateIndex
+    engine: Literal["expanded", "explicit"] = "expanded"  # static tag (E4-T04; explicit set by E4-T06a)
 
     def regime_filtered(self) -> Array:
         """`softmax(log_alpha) @ C`, shape `(T, N)`."""
@@ -63,30 +62,32 @@ class Posterior:
         return self.smoothed @ self.index.collapse
 
     def elapsed_posterior(self) -> Array:
-        """`(T, N, max_phase)`: smoothed mass bucketed by `(regime_of, phase_of)`.
+        """`(T, N, max_phase)`: smoothed mass bucketed by `(regime, phase)` (see `augmented.phase_marginals`).
 
-        `max_phase` is `D_max` for the explicit engine or `max(r)` for the expanded engine's
-        phase expansion -- both are "how many phase/elapsed-time buckets a regime has", so one
-        implementation covers both (see module docstring).
+        `max_phase` is `max(r_i)` for the expanded engine's phase expansion and `D_max` for the
+        explicit engine (where `phase_of` holds the elapsed duration); both are "how many
+        phase/elapsed buckets a regime has", so one bucketing serves both `engine` tags.
         """
-        index = self.index
-        n_series = index.collapse.shape[1]
-        max_phase = int(jnp.max(index.phase_of)) if index.phase_of.size else 0
-        regime_one_hot = jax.nn.one_hot(index.regime_of, n_series)  # (S, N)
-        phase_one_hot = jax.nn.one_hot(index.phase_of - 1, max_phase)  # (S, max_phase)
-        indicator = regime_one_hot[:, :, None] * phase_one_hot[:, None, :]  # (S, N, max_phase)
-        return jnp.einsum("ts,snp->tnp", self.smoothed, indicator)
+        from regimekit.engine.augmented import phase_marginals
+
+        return phase_marginals(self)
 
 
-def _flatten_posterior(posterior: Posterior) -> tuple[tuple[Array, ...], _StaticRef]:
+def _flatten_posterior(posterior: Posterior) -> tuple[tuple[Array, ...], tuple[_StaticRef, str]]:
     children = (posterior.log_alpha, posterior.log_beta, posterior.smoothed, posterior.loglik)
-    return children, _StaticRef(posterior.index)
+    return children, (_StaticRef(posterior.index), posterior.engine)
 
 
-def _unflatten_posterior(aux: _StaticRef, children: tuple[Array, ...]) -> Posterior:
+def _unflatten_posterior(aux: tuple[_StaticRef, str], children: tuple[Array, ...]) -> Posterior:
     log_alpha, log_beta, smoothed, loglik = children
+    ref, engine = aux
     return Posterior(
-        log_alpha=log_alpha, log_beta=log_beta, smoothed=smoothed, loglik=loglik, index=aux.value
+        log_alpha=log_alpha,
+        log_beta=log_beta,
+        smoothed=smoothed,
+        loglik=loglik,
+        index=ref.value,
+        engine=engine,  # type: ignore[arg-type]
     )
 
 
