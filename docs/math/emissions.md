@@ -38,7 +38,27 @@ semantics. This matches Appendix A's single-series (`M = 1`) usage; `from_config
 for `constraint: increasing` with `n_series > 1` rather than silently sharing one ordered value across
 every series.
 
-## Stub families (later tickets)
+## Student-t (`StudentTFamily`, E3-T02)
+
+Heavy-tailed location-scale emission with per-state (or tied) degrees of freedom `
+u_i > 2`:
+
+$$
+y_t \mid z_t = i \sim m_i(t)\,\Delta_t + s_i(t)\sqrt{\Delta_t}\; t_{
+u_i}, \qquad
+m_i(t) = m_i + \gamma_i^	op z^e_t, \quad \log s_i(t) = \log s_i + \delta_i^	op z^e_t
+$$
+
+`s_i` is a **scale, not the standard deviation**: `\mathrm{sd} = s_i \sqrt{
+u_i/(
+u_i - 2)}\,\sqrt{\Delta_t}`.
+`m_i` is the location of the log-return itself, so there is no `-\sigma^2/2` term; as `
+u 	o \infty` the density
+tends to GBM with `\mu - \sigma^2/2 = m`, `\sigma = s`. Parameters: `emission.{m,s,nu,gamma,delta}`;
+`emission.nu` has shape `(N,)` on the `nu_gt_2` domain, and mode `tied` shares one value (tie group `"nu"`),
+i.e. one free coordinate.
+
+## Later families
 
 !!! note
-    Student-t (E3-T02); OU/jump/GARCH families are out of scope for 0.1.0 (see E9-T03 spike).
+    OU/jump/GARCH families are out of scope for 0.1.0 (see E9-T03 spike).

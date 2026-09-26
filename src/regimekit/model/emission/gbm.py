@@ -60,13 +60,16 @@ def _spec_from_paramcfg(
     n_series: int,
     domain: Domain,
     default_init: float,
+    flat: bool = False,
 ) -> ParamSpec:
     # The `increasing` bijector (ParamManager, E1-T03b) only supports a 1-D `(N,)` cell; a joint
     # ordering across a per-series `(N, M)` grid has no clean semantics, so `constraint="increasing"`
     # collapses the spec to `(N,)` (matches Appendix A: single-series, M=1) and is rejected for M>1,
     # rather than silently sharing one ordered value across every series.
-    flat = cfg.constraint == "increasing"
-    if flat and n_series != 1:
+    # `flat=True` forces an `(N,)` spec regardless (per-state parameters such as Student-t `nu`).
+    increasing = cfg.constraint == "increasing"
+    flat = flat or increasing
+    if increasing and n_series != 1:
         raise ConfigError(
             f"constraint='increasing' is only supported for a single series (n_series={n_series})",
             path=name,
