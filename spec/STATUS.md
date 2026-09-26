@@ -31,7 +31,7 @@
 | E3-T04 | Explicit duration families | M | 2 | E3-T03 | todo | | |
 | E3-T05 | `TransitionModel` (jump, logit link, generator) | M | 2 | E1-T03b | done | 8e657c5 | AC1-AC5 verified with real tests (rows sum to 1 at 1e-12 incl. zero-on-current, no-covariate time invariance, Appendix B param counts via `ParamManager.n_free`, generator `expm` golden + Δ→0 property, order-2 layout); independent review caught two silent config-wiring gaps (`coef_prior_sd` ignored, Dirichlet prior dropped when covariates configured), both fixed; Appendix E golden numbers corrected (see Spec fixes) |
 | E3-T06 | Lattice + ordering + post-sort | S | 2 | E3-T01 | todo | | |
-| E4-T01 | NumPy reference implementations | M | 2 | E1-T04 | todo | | |
+| E4-T01 | NumPy reference implementations | M | 2 | E1-T04 | done | (pending) | AC1-AC4 verified with real tests (hand-computed 2-state/3-step HMM to 1e-12, HSMM forward_backward == brute_force_loglik to 1e-12 incl. a hand-set-up case, phase/explicit equivalence to 1e-10, line count + no-JAX/regimekit-import checks); independent review re-derived the HSMM segment-boundary forward/backward/censoring math from scratch on a hand-built N=2,T=3,D_max=2 case and confirmed correctness (not just self-consistency with its own brute-force oracle), including the smoothed-marginals/elapsed-duration-posterior code that no AC directly tests |
 | E4-T02a | `StateIndex` + `build_expanded` | M | 3 | E1-T05, E3-T03, E3-T05 | done | 9256dad | AC1-AC5 verified with real tests (S formula incl. hypothesis property, order-2/3 tuple validity, one-hot collapse + independent reference enumeration, entry_state_of shift correctness, pair conditioning N(N-1) distinct values); independent review found no blocking issues (strengthened one jit test per its minor note: pass StateSpace as an actual jit arg + a no-recompile check, rather than only closing over it) |
 | E4-T02b | Per-step `A_t` builder | M | 3 | E4-T02a | done | aae467d | AC1-AC5 verified with real tests (row-sum/structural-zero exactness, independent NumPy reference incl. covariates, no-retrace jit, Appendix E golden + stationary `pi A = pi`, finite gradients); independent review caught a real NaN/non-differentiability bug in the initial `jnp.linalg.eig`-based stationary distribution (sign-ambiguous eigenvector -> `0/0` ~50% of the time, plus `jax.grad` unsupported for non-symmetric eigenvectors) -- replaced with power iteration, fixed; also added a `rate_index_of`/`n_rates` shape guard (`DataError`) and fixed `z=0` semantics (zero-vector, not `None`) for the stationary path with covariate-logit transitions, both flagged by the same review |
 | E4-T03a | Expanded engine: forward / loglik | M | 3 | E4-T01, E4-T02b, E3-T01 | todo | | |
@@ -77,14 +77,17 @@ This run (autonomous, budget 5, now exhausted): critical-path tickets E3-T01, E3
 E4-T02b all done. `.venv` at repo root (uv-managed, Python 3.13.13); `uv sync --all-groups` works from a
 clean checkout. `nox -s lint types tests docs` green on `main` after every ticket.
 
+E4-T01 also now done: `tests/reference/{ref_hmm,ref_hsmm,ref_expansion,ref_dists}.py` +
+`test_reference_selftests.py`, pure NumPy/SciPy, no `regimekit`/`jax` import anywhere in that
+directory (CLAUDE.md §6). `ref_expansion.build_expanded_a` is available for E4-T02a/E4-T02b's
+deferred golden comparison (see Findings) whenever someone wants to add it retroactively.
+
 Next eligible (critical path, Step 1 order): **E4-T03a** (Expanded engine: forward / loglik), deps
-E4-T01 (NumPy reference implementations, still `todo`), E4-T02b (now done), E3-T01 (done). **E4-T01 must
-be done first** -- it is not on this run's critical path list but E4-T03a's own "Depends on" names it, and
-its own AC2 (golden comparison) plus E4-T02a/E4-T02b's already-deferred `tests/reference/ref_expansion.py`
-(see Spec fixes below) both want it. After E4-T01: E4-T03a, then E4-T03b (also newly `todo`-eligible:
-E4-T04, E4-T05 in parallel after E4-T03b). `StateSpace.transition_fn` is now real (`statespace/transitions.py`,
-E4-T02b); `initial_log_rho`'s `"stationary"` branch uses power iteration, not `jnp.linalg.eig` (a NaN/
-non-differentiability bug found and fixed during E4-T02b's review -- see Spec fixes).
+E4-T01 (done), E4-T02b (done), E3-T01 (done) -- all satisfied. After E4-T03a: E4-T03b, then (in
+parallel) E4-T04/E4-T05. `StateSpace.transition_fn` is real (`statespace/transitions.py`, E4-T02b);
+`initial_log_rho`'s `"stationary"` branch uses power iteration, not `jnp.linalg.eig` (a NaN/
+non-differentiability bug found and fixed during E4-T02b's review -- see Spec fixes). E4-T03a's own
+golden tests should compare against `tests/reference/ref_hmm.py` (built this run) directly.
 
 ## Blocked / needs owner
 
@@ -104,16 +107,23 @@ non-differentiability bug found and fixed during E4-T02b's review -- see Spec fi
   part of AC4) hold regardless and are unaffected.
 
 ## Findings for the owner
-- E4-T02a/E4-T02b: both tickets' AC2/AC3 name `tests/reference/ref_expansion.py` (owned by E4-T01,
-  still `todo`) as the golden comparison target. Neither ticket depends on E4-T01 per the
-  dependency graph, so each wrote its own independent NumPy reference inline in its property test
-  file instead (`tests/property/test_e4_t02a_builder.py`'s `_ref_expand`,
+- E4-T01: `tests/reference/ref_hsmm.py`'s smoothed-marginals/elapsed-duration-posterior output
+  (returned by `forward_backward`, third/fourth return values) is not exercised by any of this
+  ticket's ACs (only loglik values are) -- independent review re-derived it from scratch on a small
+  hand-built case and confirmed it matches to float precision, but it has no dedicated regression
+  test in `test_reference_selftests.py` beyond a sum-to-1 sanity check. Whoever first consumes it
+  (likely E4-T06a's explicit-duration engine golden tests) should add a case exercising it directly.
+- E4-T02a/E4-T02b (now resolved by E4-T01 landing, left for context): both tickets' AC2/AC3 named
+  `tests/reference/ref_expansion.py` as the golden comparison target, but that module didn't exist
+  yet when they were implemented (E4-T01 wasn't a hard dependency per the graph), so each wrote its
+  own independent NumPy reference inline in its property test file instead
+  (`tests/property/test_e4_t02a_builder.py`'s `_ref_expand`,
   `tests/property/test_e4_t02b_transitions.py`'s `_ref_a`) -- these satisfy the acceptance *intent*
   (independent re-derivation, compared at the required tolerance) but duplicate logic that
-  `tests/reference/ref_expansion.py` is presumably meant to centralize. When E4-T01 lands, consider
-  either extracting these two inline references into it (so E4-T03a's own golden tests, which do
-  depend on E4-T01, share one canonical implementation) or leaving them as-is if E4-T01's
-  `ref_expansion.py` ends up shaped differently than either inline version assumes.
+  `tests/reference/ref_expansion.py` (now built, E4-T01) centralizes going forward. Left as-is
+  rather than retroactively refactored (no ticket currently owns updating already-closed E4-T02a/b);
+  consider extracting these two inline references into `ref_expansion.build_expanded_a` next time
+  either file is touched.
 - E4-T02b: the ticket's own suggested method for `initial="stationary"` -- `jnp.linalg.eig` on
   `A_bar.T`, take the eigenvalue closest to 1, clip non-negative, normalize -- has a real bug:
   a general (non-symmetric) matrix's eigenvector is only defined up to an arbitrary sign, so when
