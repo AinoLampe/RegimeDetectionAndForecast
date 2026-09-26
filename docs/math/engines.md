@@ -38,3 +38,18 @@ memory row (`memory_marginals`, `(T, R)`). For the negative-binomial phase chain
 remaining sojourn is $(r_i - c + 1)/a_i(t)$ steps, and the phase-based lower bound on the elapsed time is
 $(c - 1)/a_i(t)$; both are averaged over the phase marginals conditional on regime $i$ (0 where the regime has no mass).
 Exact elapsed-duration posteriors come from the explicit-duration engine.
+
+## Viterbi and information criteria (E4-T05)
+
+`engine/viterbi.py` runs max-product on the expanded space in log space:
+$\delta_t(s) = \ell_t(s) + \max_{s'}[\delta_{t-1}(s') + \log A_t(s', s)]$, storing only the
+argmax table $\psi_t$ of shape `(T, S)` (int32); a reverse scan backtracks the path. Ties break to
+the lowest state index. The regime path is `regime_of[path]`, and `segments` run-length encodes it as
+`(start, end, regime)` with `end` inclusive. Within a regime segment the phase-advance moments of the negative-binomial chain can shift at
+identical joint probability when the advance probabilities agree, so distinct expanded paths with the
+same regime path can tie exactly.
+
+`engine/criteria.py`: with $p$ = `ParamManager.n_free`, $T$ the number of unmasked steps and
+$\ell$ the log-likelihood, $\mathrm{AIC} = 2p - 2\ell$, $\mathrm{BIC} = p\ln T - 2\ell$ and
+$\mathrm{ICL} = \mathrm{BIC} + 2H(\gamma)$ with
+$H(\gamma) = -\sum_t\sum_s \gamma_t(s)\ln\gamma_t(s)$ over the smoothed expanded posterior.

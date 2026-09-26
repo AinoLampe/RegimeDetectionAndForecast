@@ -15,10 +15,10 @@ from tests.helpers.engine_fixtures import Scenario, make_scenario
 from tests.reference import ref_hmm
 
 
-def reference_full(
+def reference_inputs(
     sc: Scenario, mask: np.ndarray | None = None
-) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
-    """`ref_hmm.forward_backward` fed with scipy emissions and per-step `log A_t` from E4-T02b."""
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """`(log_rho, log_a (T, S, S), log_emis (T, S))` for `ref_hmm`: scipy emissions, E4-T02b `A_t`."""
     d, sp, th = sc.data, sc.space, sc.theta
     y, dt = np.asarray(d.observations)[:, 0], np.asarray(d.dt)
     t_len = y.shape[0]
@@ -37,7 +37,14 @@ def reference_full(
     _, log_a = jax.vmap(lambda zp, zd, dti: sp.transition_fn(th, zp, zd, dti))(z_pi_j, z_d_j, jnp.asarray(dt))
     log_a = np.asarray(log_a)
     log_rho = np.asarray(initial_log_rho(sc.spec, sp, th, d.nominal_dt))
-    return ref_hmm.forward_backward(log_rho, log_a, log_emis)
+    return log_rho, log_a, log_emis
+
+
+def reference_full(
+    sc: Scenario, mask: np.ndarray | None = None
+) -> tuple[np.ndarray, np.ndarray, np.ndarray, float]:
+    """`ref_hmm.forward_backward` on `reference_inputs`."""
+    return ref_hmm.forward_backward(*reference_inputs(sc, mask))
 
 
 def reference(sc: Scenario, mask: np.ndarray | None = None) -> tuple[np.ndarray, float]:

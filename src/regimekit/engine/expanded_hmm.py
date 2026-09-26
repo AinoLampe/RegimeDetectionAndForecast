@@ -52,10 +52,14 @@ def _block(x: Array | None, t: int) -> Array:
 _Xs = tuple[Array, Array, Array, Array]
 
 
-def _forward_impl(
+def _emission_inputs(
     theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
-) -> tuple[Array, Array, _Xs]:
-    """`(log_alpha, loglik, xs)`; `xs = (ell, z_pi, z_d, dt)` sliced from step 1, shared with backward."""
+) -> tuple[Array, Array, Array, _Xs]:
+    """`(log_rho, ell_0, ell, xs)`: initial log-distribution, step-0 emissions, and the scan inputs.
+
+    `ell` is the `(T, S)` expanded emission table; `xs = (ell, z_pi, z_d, dt)` is sliced from step 1
+    and shared by the forward, backward and Viterbi scans.
+    """
     y, dt, mask = data.observations, data.dt, data.mask
     t_len = y.shape[0]
     z_pi, z_d, z_e = (
@@ -73,8 +77,15 @@ def _forward_impl(
     ell = jnp.take(log_emis, space.index.regime_of, axis=1)  # (T, S)
 
     log_rho = initial_log_rho(spec, space, theta, data.nominal_dt)
-    alpha_0 = log_rho + ell[0]
-    xs = (ell[1:], z_pi[1:], z_d[1:], dt[1:])
+    return log_rho, ell[0], ell, (ell[1:], z_pi[1:], z_d[1:], dt[1:])
+
+
+def _forward_impl(
+    theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
+) -> tuple[Array, Array, _Xs]:
+    """`(log_alpha, loglik, xs)`; `xs = (ell, z_pi, z_d, dt)` sliced from step 1, shared with backward."""
+    log_rho, ell_0, _, xs = _emission_inputs(theta, spec, space, data)
+    alpha_0 = log_rho + ell_0
 
     def step(alpha_prev: Array, xs_t: _Xs) -> tuple[Array, Array]:
         ell_t, z_pi_t, z_d_t, dt_t = xs_t
@@ -174,6 +185,12 @@ class ExpandedHMMEngine:
         return Posterior(
             log_alpha=log_alpha, log_beta=log_beta, smoothed=smoothed, loglik=loglik, index=space.index
         )
+
+    def viterbi(self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset) -> Array:
+        """The most likely expanded-state path `(T,)` (int); see `engine.viterbi.viterbi_path`."""
+        from regimekit.engine.viterbi import viterbi_path
+
+        return viterbi_path(theta, spec, space, data)
 
     def approx(self) -> None:
         """No approximate-inference plug-in for the expanded engine (FR-X01 hook)."""
