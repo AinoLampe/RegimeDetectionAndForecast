@@ -48,7 +48,7 @@
 | E5-T05a | Parameter-recovery suite | M | 4 | E5-T03, E6-T01 | todo | | |
 | E5-T05b | `selftest` command | S | 4 | E5-T05a | todo | | |
 | E5-T06 | EM for GBM (v1.x) | M | 7 | E5-T03 | todo | | post-release |
-| E6-T01 | Simulator | M | 4 | E4-T02b, E3-T01 | todo | | |
+| E6-T01 | Simulator | M | 4 | E4-T02b, E3-T01 | done | ca439af | AC1 `test_e6_t01_sojourn_mean_within_3se_and_minimum_equals_r` (negbin r=(1,2), 30 paths x T=3000, >=2000 segments, mean within 3 SE of `mean_sojourn/nominal_dt`, min == r_i); AC2 `test_e6_t01_jump_frequencies_within_3se_of_pi` (empirical run-boundary transitions vs `theta["transition.pi_rows"]`, binomial SE, target-column mapping verified against `transition.py`'s `_target_order`); AC3 `test_e6_t01_return_moments_within_3se_of_gbm_analytic` (per-regime mean/var vs `(mu-0.5 sigma^2)dt`/`sigma^2 dt`); AC4 `test_e6_t01_same_key_bitwise_identical_different_key_differs`; AC5 `test_e6_t01_higher_duration_covariate_shortens_sojourns` (duration.c=1, two constant z_d levels, monotone). Choices: `simulate_paths` is a plain Python function delegating to a jitted `_simulate_core` (vmapped over paths; `spec`/`n_paths` static) -- matches the "JIT boundary" wording via the same public-wrapper/jitted-core split used by `engine`/`objective.py`, not a literal `@jax.jit` on `simulate_paths` itself, since resolving `init_state` and the post-hoc `NumericalError` check both need to run outside jit. Per-path state transitions replicate the engines' own `A_t` timing (CLAUDE.md §3.7: step `t` uses covariate/dt row `t`) via `space.transition_fn`; observations are drawn in ONE vectorized `spec.emission.sample` call per path (its real signature takes whole `(T,)` arrays) rather than the ticket's literal per-step narrative -- statistically identical (documented in the module docstring). `segments_of` reuses `engine.viterbi.segments` per path rather than reimplementing RLE. `nominal_dt` for `initial_log_rho`'s `stationary` mode (only) is `median(dt)` (the ticket's signature has no separate `nominal_dt` param). Independent review: no blocking issues; added a `NumericalError` finiteness guard on simulated returns (CLAUDE.md §4 invariant 5, matching the `engine/*.py` pattern) plus its regression test, since the original diff only asserted finiteness in tests rather than enforcing it in the library code. |
 | E6-T02 | `decode` API + CLI | S | 5 | E4-T05, E1-T02b | todo | | |
 | E6-T03 | Covariate forecasters | M | 5 | E1-T01 | todo | | |
 | E6-T04a | Monte-Carlo path sampler | M | 5 | E6-T01, E4-T04, E6-T03 | todo | | |
@@ -69,15 +69,15 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-No ticket in progress; `main` is clean and `nox -s lint types tests docs` is green (tests take ~11-13 min now).
+No ticket in progress; `main` is clean and `nox -s lint types tests docs` is green (tests take ~13-14 min now).
 
-Run 2026-09-27 #7 (budget 5): E5-T02, E5-T03 done.
+Run 2026-09-27 #7 (budget 5): E5-T02, E5-T03, E6-T01 done.
 
-Next eligible, in Step 1 order: E6-T01 (simulator; critical path, deps E4-T02b/E3-T01 done), then E5-T04 (fit
-report/diagnostics; critical), E5-T05a (recovery suite; also needs E6-T01, now unblocked once E6-T01 lands),
-E5-T05b; E6-T02/E6-T03 (phase 5) and E7-T02a (phase 6) are also unblocked. `model/build.py` (CLAUDE.md §3.3,
-`ProjectConfig -> ModelSpec`) turned out **not** to be needed by E5-T03 after all (see Spec fixes) -- it is
-still owed by the first ticket that actually needs to build a model from a raw config, at the latest E6-T02.
+Next eligible, in Step 1 order: E5-T04 (fit report/diagnostics; critical path, deps E5-T03/E4-T05 done), then
+E5-T05a (recovery suite; critical, deps E5-T03/E6-T01 now both done), E5-T05b; E6-T02/E6-T03 (phase 5) and
+E7-T02a (phase 6) are also unblocked. `model/build.py` (CLAUDE.md §3.3, `ProjectConfig -> ModelSpec`) is still
+owed by the first ticket that actually needs to build a model from a raw config, at the latest E6-T02 (it
+turned out not to be needed by either E5-T03 or E6-T01).
 
 Environment note: if `.venv` points at a missing interpreter, `uv sync --all-groups` repairs it. pandas is 3.x
 here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`). Run only one coverage-enabled
