@@ -200,6 +200,7 @@ class EstimationSection(_Base):
     std_errors: bool = False
     device: Literal["cpu", "gpu", "auto"] = "auto"
     chunk_size: int | None = Field(default=None, ge=1)  # explicit engine: steps per chunk (None = auto)
+    parallel_scan: bool = False  # expanded engine: associative-scan smoothing (memory T*S^2)
 
 
 class CovariateForecasterCfg(_Base):

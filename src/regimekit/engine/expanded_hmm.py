@@ -11,6 +11,8 @@ The recursion is one `jax.lax.scan` over `t = 1..T-1` whose body builds `log A_t
 
 from __future__ import annotations
 
+import warnings
+from dataclasses import dataclass
 from functools import partial
 from typing import TYPE_CHECKING
 
@@ -154,8 +156,16 @@ def _check_posterior(log_alpha: Array, log_beta: Array, smoothed: Array, loglik:
         raise NumericalError("non-finite smoothed posterior", path="smoothed")
 
 
+@dataclass(frozen=True)
 class ExpandedHMMEngine:
-    """HMM inference on the phase/memory-expanded state space (`spec.engine == "expanded"`)."""
+    """HMM inference on the phase/memory-expanded state space (`spec.engine == "expanded"`).
+
+    `parallel_scan` (`estimation.parallel_scan`, off by default) computes the smoothing pass of
+    `forward_backward` with `jax.lax.associative_scan` (`engine/parallel.py`): `O(log T)` depth, `(T, S, S)`
+    memory, used only while `T * S^2 <= 5e7` (otherwise a warning and the sequential scan).
+    """
+
+    parallel_scan: bool = False
 
     def forward(
         self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
@@ -183,7 +193,7 @@ class ExpandedHMMEngine:
             NumericalError: on a non-finite loglik/posterior (checked outside jit, only when called
                 with concrete arrays).
         """
-        log_alpha, log_beta, smoothed, loglik = _forward_backward_core(theta, spec, space, data)
+        log_alpha, log_beta, smoothed, loglik = self._smooth(theta, spec, space, data)
         _check_posterior(log_alpha, log_beta, smoothed, loglik)
         return Posterior(
             log_alpha=log_alpha, log_beta=log_beta, smoothed=smoothed, loglik=loglik, index=space.index
@@ -194,6 +204,28 @@ class ExpandedHMMEngine:
         from regimekit.engine.viterbi import viterbi_path
 
         return viterbi_path(theta, spec, space, data)
+
+    def _smooth(
+        self, theta: Params, spec: ModelSpec, space: StateSpace, data: PreparedDataset
+    ) -> tuple[Array, Array, Array, Array]:
+        """`(log_alpha, log_beta, smoothed, loglik)`: sequential scan, or the parallel one if enabled."""
+        if self.parallel_scan:
+            from regimekit.engine import parallel
+
+            cells = data.observations.shape[0] * space.n_expanded**2
+            if cells <= parallel.MAX_CELLS:
+                par: tuple[Array, Array, Array, Array] = parallel.parallel_forward_backward(
+                    theta, spec, space, data
+                )
+                return par
+            warnings.warn(
+                f"parallel_scan needs T*S^2 = {cells:.3g} > {parallel.MAX_CELLS:.0e} cells; "
+                "using the sequential scan",
+                UserWarning,
+                stacklevel=3,
+            )
+        seq: tuple[Array, Array, Array, Array] = _forward_backward_core(theta, spec, space, data)
+        return seq
 
     def approx(self) -> None:
         """No approximate-inference plug-in for the expanded engine (FR-X01 hook)."""

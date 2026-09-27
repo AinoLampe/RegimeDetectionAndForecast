@@ -53,3 +53,22 @@ same regime path can tie exactly.
 $\ell$ the log-likelihood, $\mathrm{AIC} = 2p - 2\ell$, $\mathrm{BIC} = p\ln T - 2\ell$ and
 $\mathrm{ICL} = \mathrm{BIC} + 2H(\gamma)$ with
 $H(\gamma) = -\sum_t\sum_s \gamma_t(s)\ln\gamma_t(s)$ over the smoothed expanded posterior.
+
+## Parallel-scan smoothing and benchmarks (E4-T07)
+
+With `estimation.parallel_scan: true` (engine `ExpandedHMMEngine(parallel_scan=True)`, off by default) the
+smoothing pass of `forward_backward` uses `jax.lax.associative_scan` over the log-space matrix products
+$M_t = \log A_t + \ell_t^{\top}$: prefix products give
+$\alpha_t = \alpha_0 \otimes M_1 \otimes \dots \otimes M_t$, suffix products
+$\beta_t = M_{t+1} \otimes \dots \otimes M_{T-1} \otimes \mathbf 1$. Each matrix is stored as
+$\exp(M - c)$ with a scalar scale $c$, so a product is a plain matrix multiplication; entries more than about
+700 nats below the maximum of their matrix (a prefix or suffix product) underflow to $0$. Loglik, smoothed and
+filtered probabilities are unaffected (agreement $10^{-10}$, tested at $T = 2000$ with sharp emissions), but
+`log_alpha` / `log_beta` can be $-\infty$ for such entries where the sequential scan is finite. The parallel
+path is not differentiated (estimation uses the sequential `loglik`). Depth is $O(\log T)$ but the $(T, S, S)$ tables need $T S^2 \le 5 \cdot 10^7$ cells (otherwise a
+warning and the sequential scan). Results equal the sequential scan to $10^{-10}$; the option pays off on GPUs.
+
+Performance guardrails (NFR-02, `tests/benchmark`, `pytest -m benchmark`): expanded `forward_backward` for
+$T = 5000$, $N = 4$, NB $r = 5$, two covariates: at most 100 ms; explicit-duration `forward_backward` with
+$D_{\max} = 250$: at most 2 s. `benchmarks/baseline.json` holds the reference means; the nightly job fails on a
+30 % regression (`scripts/compare_benchmarks.py`).
