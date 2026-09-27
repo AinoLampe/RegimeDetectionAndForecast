@@ -108,6 +108,19 @@ def _value_and_grad(
     return jax.value_and_grad(_objective)(u, space, data, spec, engine, manager, use_priors)
 
 
+@partial(jax.jit, static_argnames=("spec", "engine", "manager"))
+def _loglik(
+    u: Array,
+    space: StateSpace,
+    data: PreparedDataset,
+    spec: ModelSpec,
+    engine: InferenceEngine,
+    manager: ParamManager,
+) -> Array:
+    theta = manager.unflatten(u)
+    return engine.loglik(theta, spec, space, data)
+
+
 class Objective(eqx.Module):
     """`J(u)` bound to a model, engine, parameter layout and dataset.
 
@@ -144,6 +157,12 @@ class Objective(eqx.Module):
         out: tuple[Array, Array] = _value_and_grad(
             u, self.space, d, self.spec, self.engine, self.manager, self.use_priors
         )
+        return out
+
+    def loglik(self, u: Array, data: PreparedDataset | None = None) -> Array:
+        """`ell(theta(u))` alone (no priors/log-det-Jacobian), jitted with the same cache as `value`."""
+        d = _canonical(self.data if data is None else data)
+        out: Array = _loglik(u, self.space, d, self.spec, self.engine, self.manager)
         return out
 
 

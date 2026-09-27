@@ -34,5 +34,9 @@
   {
     "name": "test_e4_t07_parallel_scan_forward_backward_time",
     "mean": 0.07678
+  },
+  {
+    "name": "test_e5_t02_lbfgs_fit_completes_within_budget",
+    "mean": 3.9422
   }
 ]
