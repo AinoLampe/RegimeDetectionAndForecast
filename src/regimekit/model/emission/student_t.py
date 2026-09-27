@@ -16,6 +16,7 @@ from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Literal
 
 import jax.numpy as jnp
+import jax.scipy.stats
 import numpy as np
 
 from regimekit.model.dists import sample_student_t, student_t_logpdf
@@ -181,6 +182,13 @@ class StudentTFamily:
         loc_t, scale_t, nu = self._loc_scale_nu(dt, theta, z)
         logdens = student_t_logpdf(y[:, None, :], loc_t, scale_t, nu[None, :, None])  # (T, N, M)
         return jnp.sum(logdens, axis=-1)
+
+    def cdf(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
+        """`(T, N, M)` per-regime, per-series predictive CDF at `y` (E5-T04's PIT diagnostic)."""
+        loc_t, scale_t, nu = self._loc_scale_nu(dt, theta, z)
+        z_score = (y[:, None, :] - loc_t) / scale_t
+        out: Array = jax.scipy.stats.t.cdf(z_score, df=nu[None, :, None])  # type: ignore[attr-defined]
+        return out
 
     def sample(self, key: Array, regime: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
         """`(T, M)` samples, one draw per step from the active regime's density."""

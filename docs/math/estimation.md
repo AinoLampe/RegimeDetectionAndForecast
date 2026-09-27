@@ -91,3 +91,29 @@ own `key_for(seed, restart_idx)`), and keeps the best finite-objective run. If
 `model.lattice.has_identifiability_guard(spec)` is false (no `constraint="increasing"` and no fully fixed
 emission location/scale), the winner is relabelled by ascending `sigma`/`s`
 (`model.lattice.post_sort_states`) with a warning, since the label ordering is otherwise arbitrary.
+
+## Diagnostics and standard errors (E5-T04)
+
+`estimation/report.py`'s `diagnose(fit, spec, space, engine, data) -> dict` computes the concept's
+mandatory post-fit checks, each entry `{"value": ..., "warning": str | None}`:
+
+- `regime_occupancy`: mean smoothed regime marginal; warns below `0.02` per state.
+- `posterior_mean_duration` / `posterior_mean_duration_ratio`: mean Viterbi segment length per regime
+  vs. `spec.duration.mean_sojourn(theta, nominal_dt) / nominal_dt`.
+- `pit_hist` / `pit_ks_statistic` / `pit_ks_pvalue`: a 10-bin histogram and Kolmogorov-Smirnov test of
+  the one-step-ahead PIT values against `Uniform(0, 1)` (`evaluation/metrics/predictive.py`, shared with
+  E7-T01). `pit_values` needs the emission family's `cdf` (added alongside `log_prob`/`sample` on
+  `EmissionFamily`); single-series only (`series=0` by default).
+- `ljung_box`: `{lag: (Q, p_value)}` at lags 10 and 20 on the Rosenblatt residuals
+  `Phi^{-1}(\text{PIT}_t)` (own implementation, `jax.scipy.special.gammainc` for the chi-square p-value
+  -- no `scipy` runtime dependency).
+- `ordering_check` / `label_switching_risk`: whether `sigma`/`s` is ascending, and whether that matters
+  (it doesn't if `has_identifiability_guard(spec)`).
+- `restart_dispersion`: relative gap between the best two restart objectives; warns above `1%`.
+- `timings`: total and per-restart wall time, restart count.
+
+`std_errors(objective, u_hat, manager) -> dict[str, Array] | None`: `H = hessian(objective.value)(u_hat)`
+is the observed information (`objective.value` is already the negative log-posterior/-likelihood, so no
+sign flip); `Cov_u = inv(H)`; the delta method (`Cov_theta = J Cov_u J^T`, `J = jacfwd(manager.unflatten)`)
+gives one SE array per `theta` key, shaped like that parameter. Returns `None` (not an exception) when
+`H`'s smallest eigenvalue is non-positive or non-finite.

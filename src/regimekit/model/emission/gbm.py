@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 import jax.numpy as jnp
+import jax.scipy.stats
 import numpy as np
 
 from regimekit.model.dists import normal_logpdf, sample_normal
@@ -253,6 +254,11 @@ class GBMFamily:
         mean_t, sd_t = self._mean_sd(dt, theta, z)
         logdens = normal_logpdf(y[:, None, :], mean_t, sd_t)  # (T, N, M)
         return jnp.sum(logdens, axis=-1)
+
+    def cdf(self, y: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
+        """`(T, N, M)` per-regime, per-series predictive CDF at `y` (E5-T04's PIT diagnostic)."""
+        mean_t, sd_t = self._mean_sd(dt, theta, z)
+        return jax.scipy.stats.norm.cdf((y[:, None, :] - mean_t) / sd_t)
 
     def sample(self, key: Array, regime: Array, dt: Array, theta: dict[str, Array], z: Array | None) -> Array:
         """`(T, M)` samples, one draw per step from the active regime's density."""

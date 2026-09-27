@@ -36,6 +36,10 @@ class EmissionFamily(Protocol):
         """`y (T, M)`, `dt (T,)`, `z (T, K_e)` or `None` -> `(T, N)` log-densities (summed over `M`)."""
         ...
 
+    def cdf(self, y: Array, dt: Array, theta: Params, z: Array | None) -> Array:
+        """`y (T, M)` -> `(T, N, M)` per-regime, per-series predictive CDF (E5-T04's PIT diagnostic)."""
+        ...
+
     def sample(self, key: Array, regime: Array, dt: Array, theta: Params, z: Array | None) -> Array:
         """`regime (T,)` int, `dt (T,)` -> `(T, M)` samples."""
         ...
