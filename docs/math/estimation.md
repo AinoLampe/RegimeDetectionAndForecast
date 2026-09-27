@@ -56,3 +56,38 @@ gradient at any iteration aborts the run — never raises — returning the last
 optimizer update (line search included) is fused into one `jax.jit`-ed step per iteration, since an
 unfused, eagerly-dispatched line search dominates the wall clock otherwise. `minimize` has no randomness
 and never touches an RNG key: identical inputs give bitwise identical output.
+
+## Initialization and multi-start (E5-T03)
+
+`estimation/init.py` builds a starting `theta` (constrained space) for one restart, from three
+strategies (`estimation.init` config, cycled over `estimation.restarts`):
+
+- `rollvol_kmeans(data, spec, key)`: clusters a 21-step rolling realized volatility
+  (`sqrt(mean(y^2) / nominal_dt)`, no literal `252`) into `n_states` regimes via 1-D k-means (k-means++
+  seeding, 20 iterations; deterministic from `key` via a derived NumPy seed). Cluster centers, sorted
+  ascending, become `sigma` (or `s`); the cluster mean of `y / nominal_dt` becomes `mu`/`m`; each
+  cluster's mean run length (steps, via run-length encoding) becomes the duration params through
+  `spec.duration.init_from_mean_sojourn`; an order-1 empirical run-boundary transition matrix
+  (Laplace-smoothed) becomes `transition.pi_rows`, broadcasting the same per-current-state row to every
+  memory-tuple row at `order > 1` (the label sequence alone cannot identify true higher-order
+  conditionals). Everything else (coefficients, covariate-conditioned transition logits, `nu`, ...) keeps
+  its config baseline.
+- `lattice_jitter(spec, key)`: the config's own `init`/lattice values, with every `mode == "free"` entry
+  jittered by about 10% -- multiplicative (`exp(0.1 eps)`) for `positive`, the same shifted by `2` for
+  `nu_gt_2` (`2 + (value - 2) exp(0.1 eps)`, since scaling `nu` itself can jitter it below its `> 2`
+  floor), additive-proportional for `real`. `constraint="increasing"` and simplex-domain specs
+  (`transition.pi_rows`, nonparametric-duration `logits`) are left untouched, since jitter could break
+  the ordering the `increasing` bijector's inverse needs, or land outside the simplex.
+- `random(data, spec, key)`: scale-free and clock-neutral via `s = sd(observations) / sqrt(nominal_dt)`
+  (the ticket text omits `data` from this strategy's signature, but the formula needs it -- resolved as a
+  ticket self-inconsistency, CLAUDE.md §10). `sigma ~ U[0.25, 4] s` (sorted), `mu ~ U[-1, 1] s`, mean
+  sojourn `~ LogU[5, 250]` steps via `init_from_mean_sojourn`, no-covariate jump logits `~ N(0, 0.5)`
+  (`transition.pi_rows` via `softmax(concat([0], u))`, `transition.a` directly), coefficient blocks
+  (`emission.gamma`/`delta`, `duration.c`, `transition.b`) `~ N(0, 0.1)`.
+
+`estimation/map.py`'s `fit(spec, data, cfg, seed) -> FitResult` builds the engine and state space from
+`spec.engine` itself, runs `cfg.restarts` sequential `minimize` calls (deterministic order, each with its
+own `key_for(seed, restart_idx)`), and keeps the best finite-objective run. If
+`model.lattice.has_identifiability_guard(spec)` is false (no `constraint="increasing"` and no fully fixed
+emission location/scale), the winner is relabelled by ascending `sigma`/`s`
+(`model.lattice.post_sort_states`) with a warning, since the label ordering is otherwise arbitrary.
