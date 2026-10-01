@@ -50,7 +50,7 @@
 | E5-T06 | EM for GBM (v1.x) | M | 7 | E5-T03 | todo | | post-release |
 | E6-T01 | Simulator | M | 4 | E4-T02b, E3-T01 | done | ca439af | AC1 `test_e6_t01_sojourn_mean_within_3se_and_minimum_equals_r` (negbin r=(1,2), 30 paths x T=3000, >=2000 segments, mean within 3 SE of `mean_sojourn/nominal_dt`, min == r_i); AC2 `test_e6_t01_jump_frequencies_within_3se_of_pi` (empirical run-boundary transitions vs `theta["transition.pi_rows"]`, binomial SE, target-column mapping verified against `transition.py`'s `_target_order`); AC3 `test_e6_t01_return_moments_within_3se_of_gbm_analytic` (per-regime mean/var vs `(mu-0.5 sigma^2)dt`/`sigma^2 dt`); AC4 `test_e6_t01_same_key_bitwise_identical_different_key_differs`; AC5 `test_e6_t01_higher_duration_covariate_shortens_sojourns` (duration.c=1, two constant z_d levels, monotone). Choices: `simulate_paths` is a plain Python function delegating to a jitted `_simulate_core` (vmapped over paths; `spec`/`n_paths` static) -- matches the "JIT boundary" wording via the same public-wrapper/jitted-core split used by `engine`/`objective.py`, not a literal `@jax.jit` on `simulate_paths` itself, since resolving `init_state` and the post-hoc `NumericalError` check both need to run outside jit. Per-path state transitions replicate the engines' own `A_t` timing (CLAUDE.md §3.7: step `t` uses covariate/dt row `t`) via `space.transition_fn`; observations are drawn in ONE vectorized `spec.emission.sample` call per path (its real signature takes whole `(T,)` arrays) rather than the ticket's literal per-step narrative -- statistically identical (documented in the module docstring). `segments_of` reuses `engine.viterbi.segments` per path rather than reimplementing RLE. `nominal_dt` for `initial_log_rho`'s `stationary` mode (only) is `median(dt)` (the ticket's signature has no separate `nominal_dt` param). Independent review: no blocking issues; added a `NumericalError` finiteness guard on simulated returns (CLAUDE.md §4 invariant 5, matching the `engine/*.py` pattern) plus its regression test, since the original diff only asserted finiteness in tests rather than enforcing it in the library code. |
 | E6-T02 | `decode` API + CLI | S | 5 | E4-T05, E1-T02b | done | a32c8fc | AC1-AC3 verified with real tests (`posterior.parquet` shape/row-normalization, `segments.json` == RLE of viterbi, NaN-`u` crafted params -> exit 4); independent review caught `decode` defaulting to an unconfigured engine (ignoring `estimation.chunk_size`/`parallel_scan`), fixed in `run_decode` + regression test |
-| E6-T03 | Covariate forecasters | M | 5 | E1-T01 | todo | | |
+| E6-T03 | Covariate forecasters | M | 5 | E1-T01 | done | | AC1-AC5 verified with real tests (shapes + row-0 for freeze/bootstrap/ar, bootstrap cross-correlation + block-length within tolerance, VAR(1) recovery within 0.05 + diagonal zero off-diagonals, scenario override + missing-column freeze + wrong-length ConfigError, bootstrap/ar determinism); independent review found no bugs, one mis-citation fixed and a Findings note added for the scenario AC1/AC4 reading |
 | E6-T04a | Monte-Carlo path sampler | M | 5 | E6-T01, E4-T04, E6-T03 | todo | | |
 | E6-T04b | Forecast aggregation + `ForecastResult` | M | 5 | E6-T04a | todo | | |
 | E6-T05 | `forecast` / `simulate` CLI + writers | S | 5 | E6-T04b | todo | | |
@@ -211,6 +211,17 @@ pytest at a time in this directory (two concurrent runs collide on the coverage 
   part of AC4) hold regardless and are unaffected.
 
 ## Findings for the owner
+- E6-T03: the ticket's own text self-contradicts on `scenario`'s row 0. AC1 says "row 0 equals last ...
+  for all types"; the rule table says a configured `scenario` column's user path has length `h` and
+  supplies that column outright, with no stated row exclusion -- if row 0 were forced back to `last`
+  for every type including `scenario`, the user's first value would always be silently discarded.
+  Resolved (CLAUDE.md §10) by reading AC1 as describing the three *stochastic* types
+  (`freeze`/`bootstrap`/`ar`, which have no user override) and letting `scenario`'s own row 0 follow
+  AC4 instead (`ScenarioForecaster` docstring, `inference/covariate_forecasters.py`); tested explicitly
+  (`test_e6_t03_scenario_uses_user_path_and_freezes_missing_columns`). Flagging per CLAUDE.md §11
+  rather than leaving it silent, since it is a genuine ticket-internal disagreement, not an invented
+  loophole; independent review agreed this is the only reading that doesn't make the scenario path's
+  row 0 pointless, but noted it could have been raised as a question instead of resolved unilaterally.
 - E5-T03: `estimation/init.py`'s `rollvol_kmeans` k-means step uses `np.random.default_rng(seed)`
   seeded deterministically from the JAX `key` via `jax.random.bits` (`_seed_from_key`). Overview §4.5
   item 6 says "NumPy RNG only in the data-layer bootstrap"; this is `estimation/`, not `data/`. The

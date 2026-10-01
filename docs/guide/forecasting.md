@@ -28,3 +28,19 @@ Outputs, written to the output directory:
 
 The same logic is available as a library call: `regimekit.inference.decode.decode(fit, data) ->
 PosteriorResult`.
+
+## Covariate forecasters
+
+Multi-step forecasting needs future values for every covariate the model conditions on
+(`forecast.covariate_forecaster`). Four strategies (`regimekit.inference.covariate_forecasters`):
+
+| `type` | Behaviour |
+|---|---|
+| `freeze` | Every forecast step repeats the last known value. |
+| `scenario` | A user-supplied path for named columns (`path`, loaded by the caller -- `inference/` has no file I/O); unmentioned columns freeze. |
+| `bootstrap` | A stationary block bootstrap of historical first differences, cumulated forward from the last known value (`mean_block_length`). |
+| `ar` | A VAR(1) fit by OLS on the training window, with Gaussian innovations (`diagonal: true` fits each column independently). |
+
+Every forecaster works on the *unified* set of covariate columns -- the union across the
+transition/duration/emission blocks, de-duplicated by name (`ColumnMap`) -- since the same covariate
+can drive more than one part of the model.
