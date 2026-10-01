@@ -75,12 +75,10 @@ No ticket in progress; `main` is clean. `nox -s lint types tests docs` is green 
 Run 2026-09-27 #7 (budget 5): E5-T02, E5-T03, E6-T01, E5-T04 done (budget reached).
 
 Run 2026-10-01 #8 (budget 5): E5-T05a attempted and merged `blocked` on its AC1 (see Blocked / needs
-owner) -- does not consume budget. Stopped the run here per the user's explicit choice (AskUserQuestion:
-"Mark blocked, keep code") rather than continuing to the next eligible ticket, since the blocking
-question needs the owner's read before E5-T05b (which depends on E5-T05a) can be picked up meaningfully.
+owner) -- does not consume budget. Continuing this run to the next eligible tickets.
 
-Next eligible once E5-T05a's AC1 question is resolved: E5-T05b (needs E5-T05a `done`, currently blocked
-on it). Eligible right now regardless: E6-T02 (`decode` API + CLI, phase 5, deps E4-T05/E1-T02b done) and
+E5-T05b stays ineligible until E5-T05a's AC1 question is resolved (its dependency is `done`, not
+`blocked`). Eligible now: E6-T02 (`decode` API + CLI, phase 5, deps E4-T05/E1-T02b done) and
 E6-T03 (covariate forecasters, phase 5, dep E1-T01 done); E7-T02a (fold scheduler, phase 6, dep E2-T07
 done) is also unblocked. `model/build.py` (CLAUDE.md §3.3, `ProjectConfig -> ModelSpec`) is still owed by
 the first ticket that actually needs to build a model from a raw config, at the latest E6-T02 (it turned
