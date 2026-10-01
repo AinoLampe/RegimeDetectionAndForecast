@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import jax.numpy as jnp
 import numpy as np
@@ -20,6 +20,9 @@ import pyarrow.parquet as pq
 from regimekit.data.contracts import BoundaryConstraints, PreparedDataset
 from regimekit.data.prepare import prep_stats_from_json, prep_stats_to_json
 from regimekit.utils.errors import PersistenceError
+
+if TYPE_CHECKING:
+    from regimekit.inference.results import PosteriorResult
 
 _META_KEY = b"regimekit"
 _FORMAT = 1
@@ -141,3 +144,48 @@ def read_prepared(path: Path | str) -> PreparedDataset:
         else BoundaryConstraints(tuple(b["must_switch_at"]), tuple(b["must_not_switch_at"])),
         group=meta["group"],
     )
+
+
+def write_posterior(result: PosteriorResult, out_dir: Path | str, *, augmented: bool = False) -> None:
+    """Write `decode`'s `PosteriorResult` (E6-T02): `posterior.parquet`, `segments.json`, `criteria.json`.
+
+    `posterior.parquet` has `T` rows and `2N+2` columns: `time`, `filtered_0..N-1`, `smoothed_0..N-1`,
+    `viterbi` (the regime path). `augmented=True` also writes `augmented.parquet` (`time` x `S` smoothed
+    expanded-state posterior, `state_0..S-1`).
+
+    Raises:
+        PersistenceError: the output directory cannot be written.
+    """
+    out = Path(out_dir)
+    try:
+        out.mkdir(parents=True, exist_ok=True)
+        filtered = np.asarray(result.filtered)
+        smoothed = np.asarray(result.smoothed)
+        n = filtered.shape[1]
+        time_col = pa.array(np.asarray(result.times, dtype="datetime64[ns]"))
+        columns: dict[str, Any] = {"time": time_col}
+        for i in range(n):
+            columns[f"filtered_{i}"] = pa.array(filtered[:, i])
+        for i in range(n):
+            columns[f"smoothed_{i}"] = pa.array(smoothed[:, i])
+        columns["viterbi"] = pa.array(np.asarray(result.viterbi))
+        pq.write_table(pa.table(columns), out / "posterior.parquet")
+
+        if augmented:
+            aug_smoothed = np.asarray(result.augmented.smoothed)
+            aug_columns: dict[str, Any] = {"time": time_col}
+            for j in range(aug_smoothed.shape[1]):
+                aug_columns[f"state_{j}"] = pa.array(aug_smoothed[:, j])
+            pq.write_table(pa.table(aug_columns), out / "augmented.parquet")
+
+        segments_payload = [{"start": s, "end": e, "regime": r} for s, e, r in result.segments]
+        (out / "segments.json").write_text(json.dumps(segments_payload, indent=2), encoding="utf-8")
+        criteria_payload = {
+            "loglik": result.loglik,
+            "aic": result.aic,
+            "bic": result.bic,
+            "icl": result.icl,
+        }
+        (out / "criteria.json").write_text(json.dumps(criteria_payload, indent=2), encoding="utf-8")
+    except OSError as exc:
+        raise PersistenceError(f"cannot write decode outputs to {out}: {exc}", path=str(out)) from exc

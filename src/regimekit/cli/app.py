@@ -17,8 +17,12 @@ from regimekit.data.cache import Cache, CachedProvider, SnapshotPolicy
 from regimekit.data.contracts import ObservationSet
 from regimekit.data.prepare import Preparer, PrepDiagnostics, prep_stats_to_json
 from regimekit.data.quality import build_quality_report
+from regimekit.engine.expanded_hmm import ExpandedHMMEngine
+from regimekit.engine.explicit_duration import ExplicitDurationEngine
 from regimekit.finance.providers import get_provider
-from regimekit.persistence.results import write_prepared
+from regimekit.inference.decode import decode
+from regimekit.persistence.results import read_prepared, write_posterior, write_prepared
+from regimekit.persistence.temp_model import load_temp_model
 from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR
 from regimekit.utils.errors import EXIT_CODES, ConfigError, DataError, PersistenceError, RegimekitError
 from regimekit.utils.logging import configure_logging, get_logger
@@ -265,6 +269,69 @@ def fetch_cmd(config_path: Path) -> None:
         configure_logging(config.project.log_level)
         out_dir = _global_options.out or config.project.output_dir
         run_fetch(config, config_path.resolve().parent, out_dir, _global_options.offline)
+    except RegimekitError as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(code=EXIT_CODES.get(type(exc), 1)) from exc
+
+
+def run_decode(
+    config: ProjectConfig,
+    config_dir: Path,
+    out_dir: Path,
+    model_dir: Path,
+    offline: bool,
+    *,
+    augmented: bool = False,
+) -> None:
+    """Load/refetch `prepared.parquet`, load `--model DIR`, decode and write the outputs.
+
+    Raises:
+        DataError: no prepared dataset exists and `--offline` forbids fetching one.
+        NumericalError: the engine's log-likelihood is non-finite (exit code 4).
+        PersistenceError: `model_dir` is not a `write_temp_model` directory, or outputs can't be written.
+    """
+    prepared_path = out_dir / "prepared.parquet"
+    if not prepared_path.exists():
+        if offline:
+            raise DataError(f"no prepared dataset at {prepared_path} and --offline forbids fetching one")
+        run_fetch(config, config_dir, out_dir, offline)
+    dataset = read_prepared(prepared_path)
+    fit = load_temp_model(model_dir, dataset)
+    # `decode`'s own `engine=None` default always builds a default-configured engine; pass one built
+    # from `config.estimation` (`chunk_size`/`parallel_scan`) so decoding matches how the model was
+    # fit, the same way `estimation.map.fit` builds its engine (independent review finding).
+    engine = (
+        ExplicitDurationEngine(chunk_size=config.estimation.chunk_size)
+        if fit.spec.engine == "explicit"
+        else ExpandedHMMEngine(parallel_scan=config.estimation.parallel_scan)
+    )
+    result = decode(fit, dataset, engine=engine)
+    write_posterior(result, out_dir, augmented=augmented)
+    get_logger("regimekit.decode").info(
+        "decode_done", out=str(out_dir), rows=int(dataset.times.shape[0]), loglik=result.loglik
+    )
+
+
+@app.command("decode")
+def decode_cmd(
+    config_path: Path,
+    model: Path = typer.Option(..., "--model", help="Directory from `write_temp_model`."),
+    augmented: bool = typer.Option(False, "--augmented", help="Also write augmented.parquet."),
+) -> None:
+    """Decode a fitted model against `config_path`'s data: filtered/smoothed/Viterbi/segments/IC."""
+    try:
+        config = load_config(config_path)
+        _apply_overrides(config, _global_options)
+        configure_logging(config.project.log_level)
+        out_dir = _global_options.out or config.project.output_dir
+        run_decode(
+            config,
+            config_path.resolve().parent,
+            out_dir,
+            model,
+            _global_options.offline,
+            augmented=augmented,
+        )
     except RegimekitError as exc:
         typer.echo(str(exc), err=True)
         raise typer.Exit(code=EXIT_CODES.get(type(exc), 1)) from exc

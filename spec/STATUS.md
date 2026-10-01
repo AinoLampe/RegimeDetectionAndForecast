@@ -49,7 +49,7 @@
 | E5-T05b | `selftest` command | S | 4 | E5-T05a | todo | | |
 | E5-T06 | EM for GBM (v1.x) | M | 7 | E5-T03 | todo | | post-release |
 | E6-T01 | Simulator | M | 4 | E4-T02b, E3-T01 | done | ca439af | AC1 `test_e6_t01_sojourn_mean_within_3se_and_minimum_equals_r` (negbin r=(1,2), 30 paths x T=3000, >=2000 segments, mean within 3 SE of `mean_sojourn/nominal_dt`, min == r_i); AC2 `test_e6_t01_jump_frequencies_within_3se_of_pi` (empirical run-boundary transitions vs `theta["transition.pi_rows"]`, binomial SE, target-column mapping verified against `transition.py`'s `_target_order`); AC3 `test_e6_t01_return_moments_within_3se_of_gbm_analytic` (per-regime mean/var vs `(mu-0.5 sigma^2)dt`/`sigma^2 dt`); AC4 `test_e6_t01_same_key_bitwise_identical_different_key_differs`; AC5 `test_e6_t01_higher_duration_covariate_shortens_sojourns` (duration.c=1, two constant z_d levels, monotone). Choices: `simulate_paths` is a plain Python function delegating to a jitted `_simulate_core` (vmapped over paths; `spec`/`n_paths` static) -- matches the "JIT boundary" wording via the same public-wrapper/jitted-core split used by `engine`/`objective.py`, not a literal `@jax.jit` on `simulate_paths` itself, since resolving `init_state` and the post-hoc `NumericalError` check both need to run outside jit. Per-path state transitions replicate the engines' own `A_t` timing (CLAUDE.md §3.7: step `t` uses covariate/dt row `t`) via `space.transition_fn`; observations are drawn in ONE vectorized `spec.emission.sample` call per path (its real signature takes whole `(T,)` arrays) rather than the ticket's literal per-step narrative -- statistically identical (documented in the module docstring). `segments_of` reuses `engine.viterbi.segments` per path rather than reimplementing RLE. `nominal_dt` for `initial_log_rho`'s `stationary` mode (only) is `median(dt)` (the ticket's signature has no separate `nominal_dt` param). Independent review: no blocking issues; added a `NumericalError` finiteness guard on simulated returns (CLAUDE.md §4 invariant 5, matching the `engine/*.py` pattern) plus its regression test, since the original diff only asserted finiteness in tests rather than enforcing it in the library code. |
-| E6-T02 | `decode` API + CLI | S | 5 | E4-T05, E1-T02b | todo | | |
+| E6-T02 | `decode` API + CLI | S | 5 | E4-T05, E1-T02b | done | | AC1-AC3 verified with real tests (`posterior.parquet` shape/row-normalization, `segments.json` == RLE of viterbi, NaN-`u` crafted params -> exit 4); independent review caught `decode` defaulting to an unconfigured engine (ignoring `estimation.chunk_size`/`parallel_scan`), fixed in `run_decode` + regression test |
 | E6-T03 | Covariate forecasters | M | 5 | E1-T01 | todo | | |
 | E6-T04a | Monte-Carlo path sampler | M | 5 | E6-T01, E4-T04, E6-T03 | todo | | |
 | E6-T04b | Forecast aggregation + `ForecastResult` | M | 5 | E6-T04a | todo | | |
@@ -78,12 +78,13 @@ Run 2026-10-01 #8 (budget 5): E5-T05a attempted and merged `blocked` on its AC1 
 owner) -- does not consume budget. Continuing this run to the next eligible tickets.
 
 E5-T05b stays ineligible until E5-T05a's AC1 question is resolved (its dependency is `done`, not
-`blocked`). Eligible now: E6-T02 (`decode` API + CLI, phase 5, deps E4-T05/E1-T02b done) and
-E6-T03 (covariate forecasters, phase 5, dep E1-T01 done); E7-T02a (fold scheduler, phase 6, dep E2-T07
-done) is also unblocked. `model/build.py` (CLAUDE.md §3.3, `ProjectConfig -> ModelSpec`) is still owed by
-the first ticket that actually needs to build a model from a raw config, at the latest E6-T02 (it turned
-out not to be needed by E5-T03, E6-T01, E5-T04, or E5-T05a -- E5-T05a builds `ModelSpec` by hand per
-scenario, same pattern as `tests/helpers/objective_fixtures.py`, since there is no project config here).
+`blocked`). E6-T02 done this run (see its row); `model/build.py` (CLAUDE.md §3.3) now exists, created
+there -- it was not needed by E5-T03, E6-T01, E5-T04, or E5-T05a (which builds `ModelSpec` by hand per
+scenario, same pattern as `tests/helpers/objective_fixtures.py`, since it has no project config).
+
+Next eligible: E6-T03 (covariate forecasters, phase 5, dep E1-T01 done); E7-T02a (fold scheduler, phase
+6, dep E2-T07 done) is also unblocked. E8-T01 (`ModelStore` bundle) is now the one that should replace
+`persistence/temp_model.py` and switch `decode`'s CLI to the real loader (its own AC4).
 
 Environment note: if `.venv` points at a missing interpreter, `uv sync --all-groups` repairs it. pandas is 3.x
 here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`). Run only one coverage-enabled
@@ -143,6 +144,25 @@ pytest at a time in this directory (two concurrent runs collide on the coverage 
   (e.g. `--snapshots runs/x/snapshots.json`, verified on replay). Relevant again for E8-T02 (`Project`) and E8-T03.
 
 ## Spec fixes
+- E6-T02: created `src/regimekit/model/build.py` (`build_model_spec(cfg, data) -> ModelSpec`,
+  `EMISSION_FAMILIES`/`DURATION_FAMILIES` registries) -- the CLAUDE.md §3.3 unowned deliverable, first
+  needed here since `decode`'s temporary model loader must rebuild a `ModelSpec` from a resolved
+  config. `model.lattice` is not consulted (`build_model_spec` only needs structure, not
+  `lattice_jitter`'s init grid); E3-T06's STATUS finding about `validate_lattice` being unwired is
+  still open for whoever first builds a lattice-configured model end to end.
+- E6-T02: the ticket text says `--model` points at a `params.safetensors`+`spec.json` pair; `safetensors`
+  is ADR-0011, owned by E8-T01 (CLAUDE.md §3.6), so CLAUDE.md §4 invariant 6 ("no new runtime dependency
+  without an ADR") forbids adding it here. `persistence/temp_model.py` writes `params.npz` (plain NumPy)
+  instead; `spec.json` is the full resolved `ProjectConfig`. E8-T01 replaces this module per its own
+  AC4 and CLAUDE.md §7 ("remove the old code in the ticket that replaces a temporary helper").
+- E6-T02: independent review found `decode()`'s `engine=None` default always builds a bare
+  `ExpandedHMMEngine()`/`ExplicitDurationEngine()`, ignoring `estimation.chunk_size`/`parallel_scan` --
+  the exact gap this same STATUS file already flagged under E4-T07/E5-T0x Findings ("whoever assembles
+  the engine from a ProjectConfig must pass `parallel_scan=.../chunk_size=...`"). Fixed in
+  `cli.app.run_decode` (builds the engine from `config.estimation` before calling `decode`, matching
+  `estimation.map.fit`'s own pattern) with a regression test
+  (`test_e6_t02_run_decode_builds_engine_from_estimation_config`); `decode()`'s own default remains a
+  plain engine for callers (tests, REPL use) that don't have a `ProjectConfig` in scope.
 - E5-T05a: `estimation/init.py`'s `random()` strategy drew one `transition.pi_rows` logit column too
   many (`ps.shape` instead of `(*ps.shape[:-1], ps.shape[-1] - 1)`), so `ParamManager.flatten` raised a
   shape-broadcast `ValueError` for any model with `N >= 3` regimes and no transition covariates; silently
