@@ -239,7 +239,12 @@ def random(data: PreparedDataset, spec: ModelSpec, key: Array) -> Params:
 
     for ps in spec.param_specs:
         if ps.name == "transition.pi_rows":
-            logits = jax.random.normal(next(keys), ps.shape) * 0.5
+            # `ps.shape` is the *full* (R, N-1) probability row (CLAUDE.md §3.1: the reference-dropped
+            # bijector has one fewer free coordinate, but `theta`'s own value is the whole row); the
+            # logits drawn here must be one column narrower so `concat([ref, logits])` lands back on
+            # `ps.shape`, not `ps.shape[-1] + 1` (found while adding E5-T05a's N=3 recovery scenarios:
+            # silently undetected for N=2, where the resulting free-coordinate count is 0).
+            logits = jax.random.normal(next(keys), (*ps.shape[:-1], ps.shape[-1] - 1)) * 0.5
             ref = jnp.zeros((*logits.shape[:-1], 1))
             theta[ps.name] = jax.nn.softmax(jnp.concatenate([ref, logits], axis=-1), axis=-1)
         elif ps.name == "transition.a":

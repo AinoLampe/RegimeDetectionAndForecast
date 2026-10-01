@@ -45,7 +45,7 @@
 | E5-T02 | Optimizers (L-BFGS, Adam), convergence | M | 4 | E5-T01 | done | 548c79f | AC1 `test_e5_t02_lbfgs_converges_near_long_adam_run` (GBM/geometric T=500; lbfgs <=200 iter with tightened `tol_f=1e-11` vs a long, early-stopping-disabled adam reference at 1e-6); AC2 `test_e5_t02_non_finite_aborts_at_offending_iteration` (adam; a duck-typed double poisons the objective at one exact `u`, found by replaying the update sequence, since a Python call-counter inside the fused `jax.jit` step only fires once at trace time) + `..._non_finite_start_reports_distinct_reason`; AC3 `test_e5_t02_max_iter_returns_not_converged`; AC4 `tests/benchmark/test_e5_t02_fit_bench.py` (T=5000, N=3, <=500 iter lbfgs fit, measured 3.94 s vs 60 s budget, `benchmarks/baseline.json` +1 entry); AC5 `test_e5_t02_two_runs_give_bitwise_identical_u`. Choices: `minimize`'s optimizer update, apply and re-evaluation are fused into one `jax.jit`-ed step per iteration (an earlier unfused version measured ~900 ms/iteration for lbfgs -- the zoom line search's own internal evaluations dominate eager dispatch overhead); lbfgs fetches `(value, grad)` back out of the post-update state via `optax.value_and_grad_from_state` (the ticket's specified idiom) instead of unconditionally recomputing; adam's convergence checks run only every 10th iteration. Discovered empirically that adam's cosine-decay-to-zero schedule makes `tol_f` trivially satisfied near the end of *any* fixed-length run (the step size vanishes, not the distance to the optimum) -- AC1's "long adam run" reference disables early stopping instead of relying on `tol_f`/`tol_g`. Added `Objective.loglik(u)` (E5-T01's `objective.py`) so `RunRecord.loglik` reuses the same canonicalized-data jit cache as `value`/`value_and_grad` (an independent-review finding: the first version called `engine.loglik` on non-canonicalized data, forcing a one-off retrace per `minimize()` call -- harmless for a single fit, but would have compounded across E5-T03/E7's many-fold loops). Added a mypy override for `optax` (ships no `py.typed` marker). No changelog fragment (internal, no public API yet -- `fit()` doesn't exist until E5-T03, matching E5-T01's precedent). Independent review: found the two issues above (both fixed); confirmed the non-finite-abort test's reasoning and non-vacuousness. |
 | E5-T03 | Init strategies + multi-start (`estimation/map.py`) | M | 4 | E5-T02 | done | c88c7f6 | AC1 `test_e5_t03_every_strategy_gives_a_finite_objective` (gbm/student_t x negbin/gamma, order 1/2, emission/duration/transition covariates); AC2 `test_e5_t03_rollvol_kmeans_recovers_sigma_and_ordering` (2-regime alternating-segment GBM, sigma=(0.10,0.40), recovered within 30% + ascending order); AC3 `test_e5_t03_best_of_restarts_selection` (monkeypatched `minimize`, injected winner, exact `restarts` columns/row count); AC4 `test_e5_t03_fit_twice_gives_bitwise_identical_uparams`; AC5 `test_e5_t03_no_guard_warns_and_sorts_by_sigma`; AC6 `test_e5_t03_estimator_is_map_and_import_works` + `test_e5_t03_every_strategy_finite_under_steps_clock`. Choices: `fit(spec, data, cfg: EstimationSection, seed) -> FitResult` (CLAUDE.md §3.1) builds `space`/`engine` itself from `spec.engine`, so `model/build.py` (`ProjectConfig -> ModelSpec`, CLAUDE.md §3.3) is *not* needed by this ticket -- the STATUS handoff's earlier guess that E5-T03 would create it was wrong (written up as a spec fix below); `random`'s signature is `random(data, spec, key)` though the ticket text says `random(spec, key)` (its own formula needs `data`, CLAUDE.md §10); every strategy reuses `spec.duration.init_from_mean_sojourn` uniformly (geometric/negbin/explicit families) rather than re-deriving per-family formulas; `rollvol_kmeans`'s `transition.pi_rows` is an order-1 empirical marginal (Laplace-smoothed run-boundary transitions) broadcast to every memory-tuple row at `order > 1`; `lattice_jitter` skips `constraint="increasing"` and simplex-domain specs (jitter could break the ordering the bijector's inverse needs, or land outside the simplex); coefficient/covariate-conditioned transition blocks keep their config baseline in all three strategies (not estimated). `estimation/init.py`'s k-means step derives a NumPy seed deterministically from the JAX key (`jax.random.bits`) -- see Findings. Independent review: found and fixed a real bug (`lattice_jitter`'s `nu_gt_2` jitter scaled `nu` directly, which can push it below its `> 2` floor -- fixed to scale `nu - 2` instead, `2 + (nu - 2) * exp(0.1 eps)`), added the student_t/`nu_gt_2` and empty-`cfg.init`-list test coverage that would have caught it. |
 | E5-T04 | Fit report and diagnostics | M | 4 | E5-T03, E4-T05 | done | 4aa2160 | AC1 `test_e5_t04_occupancy_warning_on_a_4_state_fit_of_2_state_data` (hand-built 4-state model, 2 states with wildly wrong emission params, both occupancy < 2%), `test_e5_t04_restart_dispersion_warns_on_a_2_percent_gap` + `..._silent_on_a_tiny_gap`, `test_e5_t04_ordering_check_flags_shuffled_sigma`, `test_e5_t04_pit_true_model_passes_wrong_sigma_fails` (data via `inference.simulate.simulate_dataset` from the true theta: p > 0.05 for the true model, p < 0.01 at 5x sigma); AC2 `tests/integration/test_e5_t04_std_errors.py` (`-m slow`, T=20000, GBM/geometric, Hessian SE vs empirical SE over 40 replications -- see Measurements and Spec fixes for why 40 not the ticket's literal 20); AC3 `test_e5_t04_non_pd_hessian_returns_none_with_no_raise`. Choices: `pit_values`/`ljung_box` live in new `evaluation/metrics/predictive.py` (ticket's own "Out of scope" note: shared with E7-T01); added a `cdf` method to `EmissionFamily`/`GBMFamily`/`StudentTFamily` (needed for PIT, not covered by any earlier ticket); Ljung-Box runs on Rosenblatt residuals `Phi^-1(PIT_t)` rather than the ticket's literal `(y_t - E[y_t|y_1:t-1])/sd` (textbook-equivalent under a correctly-specified model, avoids deriving a separate predictive-mixture mean/variance, CLAUDE.md §10); `posterior_mean_duration` uses `engine.viterbi` segments (`engine.viterbi.segments`) against `spec.duration.mean_sojourn(theta, nominal_dt)/nominal_dt`; `std_errors` returns one SE array per `theta` key (delta method, `Cov_theta = J Cov_u J^T`, `J = jacfwd(manager.unflatten)`), `None` when `H`'s smallest eigenvalue is non-positive or non-finite. Independent review: found and fixed a real bug -- `pit_values` called `emission.cdf` on raw `data.observations`, which can hold `NaN` at masked rows (unlike the engines' own `y_safe = where(mask, y, 0.0)` pattern), leaking `NaN` into `pit_hist`/`ljung_box`; fixed by sanitizing `y` and marking masked PIT entries `NaN` for `pit_histogram`/`ljung_box` to drop, plus a regression test with scattered missing observations. |
-| E5-T05a | Parameter-recovery suite | M | 4 | E5-T03, E6-T01 | todo | | |
+| E5-T05a | Parameter-recovery suite | M | 4 | E5-T03, E6-T01 | blocked | | Harness/docs/tests implemented and merged (`estimation/recovery.py`, `tests/recovery/`, `docs/guide/validation.md`); AC1 (>=4/5 seeds pass every scenario) not met -- see Blocked/needs owner |
 | E5-T05b | `selftest` command | S | 4 | E5-T05a | todo | | |
 | E5-T06 | EM for GBM (v1.x) | M | 7 | E5-T03 | todo | | post-release |
 | E6-T01 | Simulator | M | 4 | E4-T02b, E3-T01 | done | ca439af | AC1 `test_e6_t01_sojourn_mean_within_3se_and_minimum_equals_r` (negbin r=(1,2), 30 paths x T=3000, >=2000 segments, mean within 3 SE of `mean_sojourn/nominal_dt`, min == r_i); AC2 `test_e6_t01_jump_frequencies_within_3se_of_pi` (empirical run-boundary transitions vs `theta["transition.pi_rows"]`, binomial SE, target-column mapping verified against `transition.py`'s `_target_order`); AC3 `test_e6_t01_return_moments_within_3se_of_gbm_analytic` (per-regime mean/var vs `(mu-0.5 sigma^2)dt`/`sigma^2 dt`); AC4 `test_e6_t01_same_key_bitwise_identical_different_key_differs`; AC5 `test_e6_t01_higher_duration_covariate_shortens_sojourns` (duration.c=1, two constant z_d levels, monotone). Choices: `simulate_paths` is a plain Python function delegating to a jitted `_simulate_core` (vmapped over paths; `spec`/`n_paths` static) -- matches the "JIT boundary" wording via the same public-wrapper/jitted-core split used by `engine`/`objective.py`, not a literal `@jax.jit` on `simulate_paths` itself, since resolving `init_state` and the post-hoc `NumericalError` check both need to run outside jit. Per-path state transitions replicate the engines' own `A_t` timing (CLAUDE.md §3.7: step `t` uses covariate/dt row `t`) via `space.transition_fn`; observations are drawn in ONE vectorized `spec.emission.sample` call per path (its real signature takes whole `(T,)` arrays) rather than the ticket's literal per-step narrative -- statistically identical (documented in the module docstring). `segments_of` reuses `engine.viterbi.segments` per path rather than reimplementing RLE. `nominal_dt` for `initial_log_rho`'s `stationary` mode (only) is `median(dt)` (the ticket's signature has no separate `nominal_dt` param). Independent review: no blocking issues; added a `NumericalError` finiteness guard on simulated returns (CLAUDE.md §4 invariant 5, matching the `engine/*.py` pattern) plus its regression test, since the original diff only asserted finiteness in tests rather than enforcing it in the library code. |
@@ -69,15 +69,23 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-No ticket in progress; `main` is clean and `nox -s lint types tests docs` is green (tests take ~14 min now).
+No ticket in progress; `main` is clean. `nox -s lint types tests docs` is green (default suite excludes
+`-m slow`, so `tests/recovery/` does not gate it); tests take ~19 min now (xdist).
 
 Run 2026-09-27 #7 (budget 5): E5-T02, E5-T03, E6-T01, E5-T04 done (budget reached).
 
-Next eligible, in Step 1 order: E5-T05a (recovery suite; critical path, deps E5-T03/E6-T01 both done),
-E5-T05b; E6-T02 (`decode` API + CLI, phase 5, deps E4-T05/E1-T02b done) and E6-T03 (covariate forecasters,
-phase 5, dep E1-T01 done); E7-T02a (fold scheduler, phase 6, dep E2-T07 done) is also unblocked. `model/build.py`
-(CLAUDE.md §3.3, `ProjectConfig -> ModelSpec`) is still owed by the first ticket that actually needs to build a
-model from a raw config, at the latest E6-T02 (it turned out not to be needed by E5-T03, E6-T01, or E5-T04).
+Run 2026-10-01 #8 (budget 5): E5-T05a attempted and merged `blocked` on its AC1 (see Blocked / needs
+owner) -- does not consume budget. Stopped the run here per the user's explicit choice (AskUserQuestion:
+"Mark blocked, keep code") rather than continuing to the next eligible ticket, since the blocking
+question needs the owner's read before E5-T05b (which depends on E5-T05a) can be picked up meaningfully.
+
+Next eligible once E5-T05a's AC1 question is resolved: E5-T05b (needs E5-T05a `done`, currently blocked
+on it). Eligible right now regardless: E6-T02 (`decode` API + CLI, phase 5, deps E4-T05/E1-T02b done) and
+E6-T03 (covariate forecasters, phase 5, dep E1-T01 done); E7-T02a (fold scheduler, phase 6, dep E2-T07
+done) is also unblocked. `model/build.py` (CLAUDE.md §3.3, `ProjectConfig -> ModelSpec`) is still owed by
+the first ticket that actually needs to build a model from a raw config, at the latest E6-T02 (it turned
+out not to be needed by E5-T03, E6-T01, E5-T04, or E5-T05a -- E5-T05a builds `ModelSpec` by hand per
+scenario, same pattern as `tests/helpers/objective_fixtures.py`, since there is no project config here).
 
 Environment note: if `.venv` points at a missing interpreter, `uv sync --all-groups` repairs it. pandas is 3.x
 here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`). Run only one coverage-enabled
@@ -86,6 +94,50 @@ pytest at a time in this directory (two concurrent runs collide on the coverage 
 `datetime64[ns]` overflows above ~106k days: keep synthetic datasets below that length.
 
 ## Blocked / needs owner
+- **E5-T05a AC1** ("all six scenarios pass >= 4/5 seeds"): not met, after three full `T=5000` nightly
+  runs (~50 min each, CPU). The harness itself is verified correct -- not a code bug:
+  - Every restart converges to the *same* objective value to the 4th decimal (e.g. `gbm_negbin` seed 0:
+    `-15187.1528` to `-15187.1538` across all 4 restarts/3 init strategies), so the MAP fit reliably
+    finds the true global MLE; it is not a convergence/local-optimum problem.
+  - The simulate -> fit round trip is correct: a dataset's own *empirical* segment-length statistics
+    (ground-truth regime labels from `simulate_paths`, not the fit) already deviate from the population
+    truth by a similar amount as the fit's estimate deviates from it (e.g. one `gbm_negbin` seed:
+    population mean sojourn 30 d, realized-path empirical mean 38.5 d over 23 segments, fitted estimate
+    41.8 d) -- ordinary Monte Carlo sampling variability of a short, infrequent regime, not an estimator
+    bias.
+  - Adding standard, non-truth-informed regularizing priors (`DirichletPrior(alpha=1.5)` on
+    `transition.pi_rows`, `NormalPrior(sd=1)` on `transition.b`/`duration.c`, matching the codebase's own
+    established MAP convention in `tests/helpers/objective_fixtures.py`'s `priors=True` and Appendix A)
+    fixed the *severe* pathology in the covariate scenarios (coefficients were blowing up to +/-50 with
+    jump probabilities collapsing to ~1e-11/1 before the fix; after, estimates stay in sane ranges and
+    most jump-probability/coefficient checks pass) but did not move the pass rate to >= 4/5, because the
+    remaining, dominant failure (`mean_sojourn[2]`/`pi[2->*]`, state 2) is a *duration*-family estimate
+    the transition priors don't touch.
+  - The failure is concentrated on **state 2 in every one of the 6 scenarios**: `sigma=0.35`, mean
+    sojourn `30` days, `r=2` phases -- the ticket's own mandated values (`sigma*`, `mu*`, mean sojourns,
+    `r=(3,3,2)` are stated plainly, not "e.g."; only `pi*` carries "e.g." and tuning it cannot fix a
+    duration-parameter estimate). At `T=5000` this regime realizes only ~20-25 segments per simulated
+    path, giving its mean-sojourn/jump-probability estimates enough sampling noise to miss the 25%
+    rel / 0.15 abs tolerance in most of the 5 seeds; `mu` also exceeded its Hessian-based 2-SE band in 2
+    of 15 `mu` checks across one run (3 states x 5 seeds), somewhat more than the ~5% an asymptotically
+    correct SE would predict, suggesting the Hessian SE may itself be a mild underestimate for this
+    model at this `T` (a separate, smaller contributor).
+  - A "seed passes" requires *every* evaluated check in that seed to hold (`RecoveryReport.passed`,
+    directly matching the ticket's "meet all tolerances" wording); with ~15-20 checks per seed, this
+    compounds even individually-plausible per-check pass rates into a low joint pass rate, which is very
+    likely part of why the suite struggles to clear 4/5 even where only one or two of the ~20 checks miss.
+  - Asked the user (AskUserQuestion) how to proceed; chosen answer: **merge the implementation as-is,
+    mark AC1 blocked for the owner** (not: increase `T` beyond the ticket's default, not: loosen or
+    reinterpret the per-check granularity -- both remain open options below if the owner wants them tried).
+  - Precise question for the owner: is `T=5000`/`restarts=4`/5-seed/all-checks-must-pass, exactly as
+    the ticket states it, actually expected to clear 4/5 seeds for this truth configuration, or does
+    recovering it require either (a) a larger `T` specifically for the explicit/mean-sojourn-sensitive
+    scenarios (the ticket's `REGIMEKIT_RECOVERY_T` is framed as a way to *reduce* `T` for CI budget, not
+    increase it, so this would be a scope decision), or (b) a coarser pass criterion (e.g. per-scenario
+    checks need not all hold simultaneously in one seed, only each *tolerance category* needs to clear
+    4/5 seeds on its own)? `tests/recovery/test_e5_t05a_recovery.py` (`-m slow`) will fail until this is
+    resolved; it does not gate the default `nox -s tests` session (which excludes `-m slow`), so `main`
+    stays green.
 - E2-T05/E2-T08 (owner decision, does not block tickets): `data.cache.snapshot` is one id, but a run with covariates
   reads several cache entries. `fetch` now rejects a pinned id together with covariates (`ConfigError`, exit 2, path
   `data.cache.snapshot`); pinning works for primary-only runs, and `--offline` replays the current cache. Options: (a)
@@ -93,6 +145,18 @@ pytest at a time in this directory (two concurrent runs collide on the coverage 
   (e.g. `--snapshots runs/x/snapshots.json`, verified on replay). Relevant again for E8-T02 (`Project`) and E8-T03.
 
 ## Spec fixes
+- E5-T05a: `estimation/init.py`'s `random()` strategy drew one `transition.pi_rows` logit column too
+  many (`ps.shape` instead of `(*ps.shape[:-1], ps.shape[-1] - 1)`), so `ParamManager.flatten` raised a
+  shape-broadcast `ValueError` for any model with `N >= 3` regimes and no transition covariates; silently
+  tolerated at `N=2` (free-coordinate count 0 there, so the mismatch never reached `.set()`). Pre-existing
+  in merged E5-T03 code, found while adding E5-T05a's `N=3` scenarios; fixed directly (not a contract
+  change, a one-line internal bug). `tests/unit/test_e5_t03_init.py` still passes unchanged.
+- E5-T05a: added `DirichletPrior`/`NormalPrior` regularization (`mode="prior"`) to the recovery
+  scenarios' `transition.pi_rows`/`transition.b`/`duration.c` specs -- generic, not truth-informed,
+  matching `tests/helpers/objective_fixtures.py`'s own `priors=True` convention -- after the first two
+  nightly runs showed severe MLE blowups (coefficients to +/-50, jump probabilities collapsing to
+  ~1e-11/1) in the transition/duration-covariate scenarios. See Blocked / needs owner for what this did
+  and did not fix.
 - E5-T04: AC2 says "over 20 simulation replications"; the test uses 40. At 20, one `emission.mu`
   coordinate landed at 27% relative error against the 20% tolerance (independent review verified this
   is sampling noise in the *empirical* SE estimate itself, not a bug: a sample std over `n` draws has

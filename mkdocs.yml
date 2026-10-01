@@ -51,6 +51,7 @@ nav:
       - Data providers & ToS: guide/providers.md
       - Forecasting: guide/forecasting.md
       - Backtesting: guide/backtesting.md
+      - Validation: guide/validation.md
   - Math:
       - Parameters: math/parameters.md
       - Emissions: math/emissions.md
