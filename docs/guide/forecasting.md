@@ -59,3 +59,27 @@ assumption, ADR-0007).
 `regimekit.data.calendar`) builds the horizon timestamps on a **weekday calendar** -- Saturdays and
 Sundays are skipped, exchange holidays are *not* (no holiday calendar in 0.1.0). `Δ` is `1/252`
 (trading), the real gap in days / 365.25 (calendar) or `1` (steps).
+
+## `MonteCarloForecaster`
+
+```python
+mc = MonteCarloForecaster(spec, space, engine, forecaster, cfg.forecast)
+result = mc.forecast(fit, data, horizon=20, n_sim=10_000, seed=0)
+```
+
+The filter pass (`engine.forward`, or a supplied `Posterior`) gives `log_alpha_T`; covariate paths come
+from the configured forecaster (fitted on the training window only); `forecast_paths` /
+`forecast_paths_explicit` sample the future. The `ForecastResult` holds:
+
+| Field | Shape | Meaning |
+|---|---|---|
+| `regime_probs` | `(h, N)` | mean of the one-hot regime over paths; rows sum to 1 |
+| `samples` | `(n_sim, h, M)` | per-step log-returns |
+| `cum_quantiles` | `(h, Q, M)` | quantiles (`forecast.quantiles`) of the cumulative log-return |
+| `mean`, `var` | `(h, M)` | mean / variance of the cumulative log-return |
+| `horizon_times` | `(h,)` | weekday timestamps after `origin_time` |
+
+Notes: the output is bitwise reproducible per `(fit, data, horizon, n_sim, seed)`; `n_sim * h * M > 2e8`
+raises `NumericalError`; with covariates and `h > 1` a covariate forecaster is required, and the *last
+observed* covariate row stands in for the (unobserved) row of the first forecast step. For the explicit
+engine the unchunked `forward` is used, so very long samples (`T * N * D_max > 5e7`) are not supported.
