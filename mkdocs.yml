@@ -50,6 +50,7 @@ nav:
       - Configuration reference: guide/config.md
       - Data providers & ToS: guide/providers.md
       - Forecasting: guide/forecasting.md
+      - Output files: guide/outputs.md
       - Backtesting: guide/backtesting.md
       - Validation: guide/validation.md
   - Math:
