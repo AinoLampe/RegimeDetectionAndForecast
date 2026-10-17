@@ -6,6 +6,12 @@ import hashlib
 
 import jax
 
+# Purpose ids (CLAUDE.md §3.5): ints only.
+PURPOSE_FORECAST = 10
+FORECAST_ORIGIN = 1
+FORECAST_COVARIATES = 2
+FORECAST_PATHS = 3
+
 
 def key_for(seed: int, *ids: int) -> jax.Array:
     """Return a deterministic PRNG key: `jax.random.key(seed)` folded with each id in order."""

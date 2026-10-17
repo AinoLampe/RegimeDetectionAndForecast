@@ -26,6 +26,7 @@ import numpy as np
 
 from regimekit.data.contracts import Clock, CovariateSeries, ObservationSet
 from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR, TRADING_DAYS_PER_YEAR, is_irregular
+from regimekit.utils.clock import future_grid as future_grid  # re-export (E6-T04a)
 from regimekit.utils.errors import ConfigError, DataError
 
 MissingReturns = Literal["drop", "error"]

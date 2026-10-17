@@ -44,3 +44,18 @@ Multi-step forecasting needs future values for every covariate the model conditi
 Every forecaster works on the *unified* set of covariate columns -- the union across the
 transition/duration/emission blocks, de-duplicated by name (`ColumnMap`) -- since the same covariate
 can drive more than one part of the model.
+
+## Forecast paths
+
+`regimekit.inference.forecast.forecast_paths` samples `n_sim` future paths of horizon `h` from the
+filtered posterior at the origin: each path starts in a state drawn from `softmax(log_alpha_T)`, then
+applies `A_{T+k}` (covariate row `k-1`, `Δ` from `future_grid`) and draws the return from the new
+regime's emission. `forecast_paths_explicit` does the same for the explicit-duration engine: it draws the
+origin segment's remaining sojourn from the pmf conditioned on `d >= elapsed` (right-censored at the
+origin), then fresh durations for later segments. Durations use `nominal_dt` (regular-grid
+assumption, ADR-0007).
+
+`future_grid(last_time, h, clock, bars_per_day)` (in `regimekit.utils.clock`, re-exported by
+`regimekit.data.calendar`) builds the horizon timestamps on a **weekday calendar** -- Saturdays and
+Sundays are skipped, exchange holidays are *not* (no holiday calendar in 0.1.0). `Δ` is `1/252`
+(trading), the real gap in days / 365.25 (calendar) or `1` (steps).
