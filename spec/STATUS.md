@@ -69,27 +69,28 @@
 | E9-T04 | Endogenous covariates design spike | S | 7 | E9-T01 | todo | | post-release, ADR-0023, ends needs-owner |
 
 ## Handoff
-No ticket in progress; `main` is clean. `nox -s lint types tests docs` is green (default suite excludes
-`-m slow`, so `tests/recovery/` does not gate it); tests take ~19 min now (xdist).
+No ticket in progress; `main` is clean and `nox -s lint types tests docs` is green (tests ~17 min with xdist;
+`-m slow` suites such as `tests/recovery/` are excluded from the default session).
 
-Run 2026-09-27 #7 (budget 5): E5-T02, E5-T03, E6-T01, E5-T04 done (budget reached).
+Run 2026-10-17 #9 (budget 5): E6-T04a, E6-T04b, E6-T05, E7-T01, E7-T02a done (budget reached).
 
-Run 2026-10-01 #8 (budget 5): E5-T05a attempted and merged `blocked` on its AC1 (see Blocked / needs
-owner) -- does not consume budget. Continuing this run to the next eligible tickets.
+Phase 5 (overview section 5) exit criterion "`decode`/`forecast` CLI on real data": the CLI commands exist and
+are tested end to end on synthetic csv projects (`tests/integration/test_e6_t02_decode.py`,
+`test_e6_t05_cli.py`); a run on real data (`^GDAXI` via yfinance, FRED covariates) was not done
+(`ALLOW_LIVE_NETWORK: no`, no `FRED_API_KEY`) -- see Needs CI / network / GPU.
 
-E5-T05b stays ineligible until E5-T05a's AC1 question is resolved (its dependency is `done`, not
-`blocked`). E6-T02 done this run (see its row); `model/build.py` (CLAUDE.md §3.3) now exists, created
-there -- it was not needed by E5-T03, E6-T01, E5-T04, or E5-T05a (which builds `ModelSpec` by hand per
-scenario, same pattern as `tests/helpers/objective_fixtures.py`, since it has no project config).
-
-Next eligible: E6-T03 (covariate forecasters, phase 5, dep E1-T01 done); E7-T02a (fold scheduler, phase
-6, dep E2-T07 done) is also unblocked. E8-T01 (`ModelStore` bundle) is now the one that should replace
-`persistence/temp_model.py` and switch `decode`'s CLI to the real loader (its own AC4).
+Still blocked: E5-T05a AC1 (owner question below), which keeps E5-T05b ineligible. Next eligible, in the order
+step 1 would pick them: E7-T02b (walk-forward runner; deps E5-T03, E6-T04b, E7-T01, E7-T02a all done), then
+E7-T03, E7-T04, E8-T01 (`ModelStore`; replaces `persistence/temp_model.py` for `decode` AND `forecast`/`simulate`,
+its AC4), E8-T02, E8-T03, E8-T04. E7-T02b needs: `evaluation.backtest.n_sim` config field (CLAUDE.md 3.4),
+`Metric.aggregate == "rms"` pooling for `rmse`, `ctx['dt_next']`/`mixture_weights` for `log_score_mixture`, and
+`derive_seed` for per-origin seeds.
 
 Environment note: if `.venv` points at a missing interpreter, `uv sync --all-groups` repairs it. pandas is 3.x
 here: pass `format="ISO8601"` for mixed timestamp strings (see `to_utc_ns`). Run only one coverage-enabled
-pytest at a time in this directory (two concurrent runs collide on the coverage data file). Writing Python via
-`cat <<'EOF'` in the Git Bash tool breaks on some quote sequences; write files with the editor tools instead.
+pytest at a time in this directory (two concurrent runs collide on the coverage data file). Source files in
+this working copy have CRLF line endings: Python patch scripts must read with `newline=""`, normalise, and write
+back CRLF (heredocs with apostrophes break in the Git Bash tool -- write scripts with the editor tools).
 `datetime64[ns]` overflows above ~106k days: keep synthetic datasets below that length.
 
 ## Blocked / needs owner
@@ -494,6 +495,7 @@ pytest at a time in this directory (two concurrent runs collide on the coverage 
 - `with_retries` retries every `ProviderError`, including non-transient ones raised by a downloader (e.g. HTTP 403 from a bad stooq key costs 5 attempts with backoff). Consider a non-retryable subclass if this matters in practice. Same for an invalid FRED key (HTTP 400 via fredapi `ValueError`): retried 5x before the user sees FRED's message. Tiingo 401/403/429 are retried too, and since retries are not charged the client-side quota can undercount Tiingo's tally (up to 5x per symbol in the worst case).
 
 ## Needs CI / network / GPU
+- Phase 5 exit criterion (E6-T02/T05): `decode` / `forecast` on the real Appendix A data (yfinance `^GDAXI`, FRED VIXCLS/T10Y2Y) not run -- `ALLOW_LIVE_NETWORK: no`, no `FRED_API_KEY`. Verified instead on csv projects through the real CLI (decode: posterior/segments/criteria; forecast/simulate: parquet schemas, bitwise `read_forecast` round trip).
 - E4-T07 AC1: `benchmarks/baseline.json` was recorded on the Windows 11 dev machine, not a CI runner (ticket: 'filled from a CI run'). The nightly benchmark job compares CI means with it at a 30 % threshold, so regenerate it from the first CI `bench.json` (`pytest -m benchmark --benchmark-json=bench.json`, then keep `[{name, mean}]` per benchmark) before relying on the nightly gate.
 - E4-T07 AC2/AC3 GPU: the three `-m gpu` golden tests (expanded, parallel-scan, explicit vs CPU <= 1e-8) need a GPU host; here they only skip.
 - E4-T03b AC5: `benchmarks/baseline.json` entries for forward_backward and forward now exist (E4-T07), recorded locally; a CI run must refresh them (next entry). Local medians: forward ~22 ms, forward_backward ~45 ms (T=5000, N=4, r=5, 2+2 covariates, Windows dev machine).
