@@ -138,6 +138,20 @@ back CRLF (heredocs with apostrophes break in the Git Bash tool -- write scripts
     4/5 seeds on its own)? `tests/recovery/test_e5_t05a_recovery.py` (`-m slow`) will fail until this is
     resolved; it does not gate the default `nox -s tests` session (which excludes `-m slow`), so `main`
     stays green.
+- **E5-T05a AC1, follow-up 2026-10-17 (owner chose the per-category pass criterion; it does not suffice):**
+  implemented on branch `fix/E5-T05a-category-criterion` (NOT merged: `SuiteResult.passed` = every tolerance category
+  holds in >= 4/5 seeds independently, unit-tested, docs updated) and ran the full slow suite
+  (6 scenarios x 5 seeds, T=5000, 49 min). All six scenarios still fail, mostly on **mean sojourn**:
+  category outcomes (seeds passing / 5) -- gbm_negbin sojourn 1, mu 3; duration_covariates sojourn 1, jump 3, mu 3,
+  coefficient 3; transition_covariates sojourn 1, coefficient 3; explicit_gamma sojourn 2, jump 3; fixed_drift
+  sojourn 1; order2 sojourn 2, **jump 0**. The sojourn misses hit all three regimes (60 d: 75-92 estimated; 120 d:
+  160-194; 30 d: 20-43), mostly upward, so it is not only the short-regime sampling noise assumed before. Coefficient
+  and `mu` checks also miss in 1-2 seeds. Conclusion: with the ticket's truth values (mean sojourns 60/120/30 d, ~70
+  segments per path) the 25 % / 0.15 / 2-SE tolerances are not attainable at T=5000 under either pass rule. Options
+  left: (a) larger T for the recovery scenarios (roughly 4x the segments; ~3 h nightly), (b) shorter mean sojourns in
+  the truth, (c) widen the tolerances in concept Appendix D (owner-only), (d) accept AC1 as a known gap. Recommended:
+  (a) first, check the sojourn bias at T=20000 before touching tolerances. The branch is kept because the
+  per-category rule is still the better-defined criterion if (a) is chosen.
 - E2-T05/E2-T08 (owner decision, does not block tickets): `data.cache.snapshot` is one id, but a run with covariates
   reads several cache entries. `fetch` now rejects a pinned id together with covariates (`ConfigError`, exit 2, path
   `data.cache.snapshot`); pinning works for primary-only runs, and `--offline` replays the current cache. Options: (a)
