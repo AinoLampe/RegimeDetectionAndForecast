@@ -8,6 +8,7 @@ on:
 jobs:
   recovery:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     env:
       REGIMEKIT_TYPECHECK: "1"
       JAX_PLATFORMS: cpu
@@ -18,7 +19,7 @@ jobs:
         with:
           enable-cache: true
       - run: uv sync --all-groups
-      - run: uv run nox -s recovery
+      - run: uv run nox -s recovery_smoke
 
   benchmark:
     runs-on: ubuntu-latest

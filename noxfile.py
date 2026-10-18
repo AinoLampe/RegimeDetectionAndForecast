@@ -47,9 +47,34 @@ def tests(session: nox.Session) -> None:
 
 @nox.session
 def recovery(session: nox.Session) -> None:
-    """Parameter-recovery suite (slow)."""
+    """Full parameter-recovery suite (slow: six scenarios, ~4 h on a laptop; the weekly CI job)."""
     env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
-    session.run("uv", "run", "pytest", "-m", "slow", env=env, external=True)
+    session.run(
+        "uv",
+        "run",
+        "pytest",
+        "-m",
+        "slow",
+        "--ignore=tests/recovery/test_e5_t05a_recovery_smoke.py",
+        env=env,
+        external=True,
+    )
+
+
+@nox.session
+def recovery_smoke(session: nox.Session) -> None:
+    """Quick recovery smoke run at T=5000 (one scenario, a few minutes; the nightly CI job)."""
+    env = dict(os.environ, REGIMEKIT_TYPECHECK="1", JAX_PLATFORMS="cpu")
+    session.run(
+        "uv",
+        "run",
+        "pytest",
+        "-m",
+        "slow",
+        "tests/recovery/test_e5_t05a_recovery_smoke.py",
+        env=env,
+        external=True,
+    )
 
 
 @nox.session

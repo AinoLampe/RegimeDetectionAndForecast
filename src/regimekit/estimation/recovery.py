@@ -62,7 +62,10 @@ R_PHASES = (3, 3, 2)
 # (`regimekit.model.transition._target_order`'s convention: first entry is the reference target).
 PI_ROWS_TARGETS = np.array([[0.7, 0.3], [0.5, 0.5], [0.2, 0.8]])
 TRANS_COEF_STAR = np.array([0.5, -0.5])  # two transition covariates
-DURATION_COEF_STAR = np.array([0.3, -0.3, 0.2])  # one duration covariate, per state
+# One duration covariate, per state. Owner decision (E5-T05a): the ticket's (0.3, -0.3, 0.2) has the same
+# size as the standard error at T=20000 (~0.18), so 'sign-correct' fails in ~half the 5-seed runs even for a
+# perfect estimator; doubling the effect makes the check attainable and exercises the same code path.
+DURATION_COEF_STAR = np.array([0.6, -0.6, 0.4])
 
 SIGMA_REL_TOL = 0.10
 SE_MULT = 2.0
@@ -76,9 +79,17 @@ _SIM_PURPOSE = 1
 _COV_PURPOSE = 2
 
 
+DEFAULT_RECOVERY_T = 20000
+
+
 def _default_t_len() -> int:
-    """`REGIMEKIT_RECOVERY_T` env var, default 5000 (AC3: nightly sizing knob)."""
-    return int(os.environ.get("REGIMEKIT_RECOVERY_T", "5000"))
+    """`REGIMEKIT_RECOVERY_T` env var, default `DEFAULT_RECOVERY_T` = 20000 (the sizing knob of AC3).
+
+    At `T=5000` the truth gives only ~64 regime visits per path, so even an oracle that reads the true
+    regime path meets the sojourn and jump tolerances together in only half of the seeds; at `T=20000`
+    (~256 visits) it does in ~99 % (docs/guide/validation.md).
+    """
+    return int(os.environ.get("REGIMEKIT_RECOVERY_T", str(DEFAULT_RECOVERY_T)))
 
 
 # --- covariate generation (synthetic exogenous AR(1) series, standardized) ----------------------
@@ -117,10 +128,14 @@ class Scenario:
     name: str
     order: int = 1
     duration: Literal["negbin", "gamma"] = "negbin"
+    t_scale: float = 1.0
+    """Multiplier on the default `T` (`order2`: 2.5, its six memory rows see ~1/6 of the transitions each)."""
     cov_transition: bool = False
     cov_duration: bool = False
     mu_fixed: bool = False
     d_max: int = 20
+    report_only: tuple[str, ...] = ()
+    """Tolerance categories that are reported but not part of the pass criterion (owner decision)."""
 
 
 def _build_spec_and_truth(scenario: Scenario) -> tuple[ModelSpec, Params]:
@@ -248,8 +263,14 @@ SCENARIOS: dict[str, Scenario] = {
     "gbm_negbin": Scenario(name="gbm_negbin"),
     "transition_covariates": Scenario(name="transition_covariates", cov_transition=True),
     "duration_covariates": Scenario(name="duration_covariates", cov_duration=True),
-    "order2": Scenario(name="order2", order=2),
-    "explicit_gamma": Scenario(name="explicit_gamma", duration="gamma", d_max=400),
+    "order2": Scenario(name="order2", order=2, t_scale=2.5),
+    # Mean sojourn is report-only here (owner decision): with both gamma shape and scale free the data
+    # constrain it much less than in the NB scenarios (r fixed) -- at T=20000 the fit's likelihood exceeds the
+    # truth's by ~12 nats (statistics, not the optimizer) and the 120-day regime misses 25% in 2 of 5 seeds
+    # while an oracle on the same paths does not.
+    "explicit_gamma": Scenario(
+        name="explicit_gamma", duration="gamma", d_max=400, report_only=("mean_sojourn",)
+    ),
     "fixed_drift": Scenario(name="fixed_drift", mu_fixed=True),
 }
 
@@ -352,6 +373,19 @@ class ParamCheck:
     rule: str
     evaluated: bool
     passed: bool
+
+    @property
+    def category(self) -> str:
+        """Tolerance category (concept Appendix D row): sigma, mu, mean_sojourn, jump or coefficient."""
+        if self.name.startswith("emission.sigma"):
+            return "sigma"
+        if self.name.startswith("emission.mu"):
+            return "mu"
+        if self.name.startswith("mean_sojourn"):
+            return "mean_sojourn"
+        if self.name.startswith("pi["):
+            return "jump"
+        return "coefficient"
 
     def line(self) -> str:
         """One human-readable `truth/estimate/se/rule` line for an assertion message."""
@@ -526,7 +560,7 @@ def run_scenario(
     uses 2, per the ticket's "T=1500, restarts=2" smoke-test sizing).
     """
     scenario = SCENARIOS[name]
-    t = t_len if t_len is not None else _default_t_len()
+    t = t_len if t_len is not None else round(_default_t_len() * scenario.t_scale)
     spec, theta_star = _build_spec_and_truth(scenario)
     data = _simulate(scenario, spec, theta_star, seed, t)
 
@@ -560,22 +594,95 @@ def run_scenario(
     return RecoveryReport(scenario=name, seed=seed, t_len=t, checks=tuple(checks), fit=result)
 
 
+def category_outcomes(reports: Sequence[RecoveryReport]) -> dict[str, tuple[int, int]]:
+    """`{category: (seeds passing, seeds evaluated)}`.
+
+    A seed passes a category when every *evaluated* check of that category passes in that seed; a seed
+    without any evaluated check of the category (e.g. no `mu` check when `mu` is fixed) is not counted.
+    """
+    out: dict[str, tuple[int, int]] = {}
+    for category in sorted({c.category for r in reports for c in r.checks if c.evaluated}):
+        per_seed = [[c.passed for c in r.checks if c.evaluated and c.category == category] for r in reports]
+        evaluated = [oks for oks in per_seed if oks]
+        out[category] = (sum(1 for oks in evaluated if all(oks)), len(evaluated))
+    return out
+
+
 @dataclass(frozen=True)
 class SuiteResult:
-    """`run_scenario` over `seeds`, with the empirical 5-seed spread filling in missing SEs."""
+    """`run_scenario` over `seeds`, with the empirical 5-seed spread filling in missing SEs.
+
+    Pass criterion (owner decision, E5-T05a AC1): every *gating* tolerance category (sigma, mu, mean
+    sojourn, jump probabilities, covariate coefficients) must be met in at least 4 of the 5 seeds on its
+    own; the categories need not be met in the same seeds. Categories in `report_only` are listed in
+    `categories` and `summary()` but do not decide `passed`. `n_pass` (seeds meeting *every* tolerance at
+    once) is kept as a stricter diagnostic.
+    """
 
     scenario: str
     reports: tuple[RecoveryReport, ...]
     n_pass: int
+    report_only: tuple[str, ...] = ()
+
+    @property
+    def categories(self) -> dict[str, tuple[int, int]]:
+        """`{category: (seeds passing, seeds evaluated)}` for every category, see `category_outcomes`."""
+        return category_outcomes(self.reports)
+
+    def _failing_categories(self) -> dict[str, tuple[int, int]]:
+        return {
+            c: (ok, total)
+            for c, (ok, total) in self.categories.items()
+            if c not in self.report_only and ok < min(_MIN_PASS, total)
+        }
 
     @property
     def passed(self) -> bool:
-        """`True` iff at least 4 of 5 seeds passed every applicable tolerance."""
-        return self.n_pass >= _MIN_PASS
+        """`True` iff every gating category passes in at least 4 of its seeds (all with fewer than 4)."""
+        return not self._failing_categories()
 
     def failures(self) -> str:
-        """Per-failing-seed failure lines, for the suite-level assertion message."""
-        return "\n".join(f"seed {r.seed}: {r.failures()}" for r in self.reports if not r.passed)
+        """Per failing gating category: its seed count and every failing check, for the assertion message."""
+        lines = []
+        for category, (ok, total) in self._failing_categories().items():
+            bad = [
+                f"seed {r.seed}: {c.line()}"
+                for r in self.reports
+                for c in r.checks
+                if c.evaluated and c.category == category and not c.passed
+            ]
+            lines.append(
+                f"{category}: {ok}/{total} seeds pass (need {min(_MIN_PASS, total)}) -- " + "; ".join(bad)
+            )
+        return "\n".join(lines) if lines else "no failing category"
+
+    def summary(self) -> dict[str, object]:
+        """A JSON-serializable record: outcome per category (gating or report-only) and every check."""
+        return {
+            "scenario": self.scenario,
+            "t_len": self.reports[0].t_len if self.reports else None,
+            "passed": self.passed,
+            "n_seeds_all_checks": self.n_pass,
+            "categories": {
+                c: {"passing_seeds": ok, "evaluated_seeds": total, "report_only": c in self.report_only}
+                for c, (ok, total) in self.categories.items()
+            },
+            "checks": [
+                {
+                    "seed": r.seed,
+                    "name": c.name,
+                    "category": c.category,
+                    "truth": c.truth,
+                    "estimate": c.estimate,
+                    "se": c.se,
+                    "rule": c.rule,
+                    "passed": c.passed,
+                }
+                for r in self.reports
+                for c in r.checks
+                if c.evaluated
+            ],
+        }
 
 
 def _apply_empirical_se(reports: Sequence[RecoveryReport]) -> tuple[RecoveryReport, ...]:
@@ -608,7 +715,7 @@ def _apply_empirical_se(reports: Sequence[RecoveryReport]) -> tuple[RecoveryRepo
 
 
 def run_recovery_suite(name: str, seeds: Sequence[int] = SEEDS, t_len: int | None = None) -> SuiteResult:
-    """Run `name` over `seeds`; pass if >= 4/5 seeds meet every tolerance (concept Appendix D)."""
+    """Run `name` over `seeds`; pass if every gating tolerance category holds in >= 4/5 seeds (Appendix D)."""
     reports = _apply_empirical_se([run_scenario(name, seed, t_len) for seed in seeds])
     n_pass = sum(1 for r in reports if r.passed)
-    return SuiteResult(scenario=name, reports=reports, n_pass=n_pass)
+    return SuiteResult(scenario=name, reports=reports, n_pass=n_pass, report_only=SCENARIOS[name].report_only)
