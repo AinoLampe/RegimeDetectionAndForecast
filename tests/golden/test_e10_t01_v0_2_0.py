@@ -36,14 +36,14 @@ def test_e10_t01_pipeline_reproduces_v0_2_0_bitwise(fresh: dict) -> None:  # typ
     assert differences(load_stored(), fresh) == []
 
 
-def test_e10_t01_one_flipped_bit_fails_the_comparison(fresh: dict) -> None:  # type: ignore[type-arg]
-    """AC1: altering one bit of a stored array makes the comparison fail."""
-    stored = load_stored()
-    arr = stored["fit.npz"]["uparams"].copy()
-    bits = arr.view(np.uint64)
-    bits[0] ^= np.uint64(1)
-    stored["fit.npz"]["uparams"] = arr
-    assert differences(stored, fresh) == ["fit.npz:uparams"]
+def test_e10_t01_one_flipped_bit_fails_the_comparison() -> None:
+    """AC1: altering one bit of a stored array fails the comparison."""
+    stored, altered = load_stored(), load_stored()
+    arr = altered["fit.npz"]["uparams"].copy()
+    arr.view(np.uint64)[0] ^= np.uint64(1)
+    altered["fit.npz"]["uparams"] = arr
+    assert differences(stored, stored) == []
+    assert differences(stored, altered) == ["fit.npz:uparams"]
 
 
 def test_e10_t01_manifest_matches_the_scripts_settings() -> None:
