@@ -41,8 +41,8 @@ _CAMEL = re.compile(r"(?<=[a-z0-9])(?=[A-Z])")
 _SECTION_HEADER = re.compile(r"^\s*Returns:\s*$", re.MULTILINE)
 # The verb "returns" in prose ("Returns the mask", "it returns", "`f()` returns") is not a data name.
 _VERB_RETURNS = re.compile(
-    r"(?:^|[.;:!?]\s+|\n\s*|\b(?:it|this|that|which|and|then|also|function|method|call|result|never|only|"
-    r"always|otherwise|else|to|a|the|each|one|so|but|if|when|whose)\s+|[`)\]]\s*)returns\b(?!\s*(?:of|:|\())",
+    r"(?:^|[.;:!?]\s+|\n\s*|\b(?:it|this|that|which|then|also|function|method|call|never|only|always)\s+"
+    r"|[`]\s*)returns\b(?!\s*(?:of|:|\())",
     re.IGNORECASE,
 )
 _LITERAL_252 = "252"

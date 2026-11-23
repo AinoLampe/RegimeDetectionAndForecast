@@ -78,6 +78,14 @@ def test_e10_t01_scanner_ignores_returns_section_and_keyword() -> None:
     assert _terms("def f(returns): ...") == {"returns"}
 
 
+def test_e10_t01_scanner_flags_returns_as_a_noun() -> None:
+    """The noun "returns" after a determiner or preposition is a hit; the verb is not."""
+    for text in ("the returns", "a returns array", "(log) returns", "and returns", "whose returns"):
+        assert _terms(f"x = {text!r}") == {"returns"}, text
+    for text in ("it returns x", "Also returns y", "which returns z"):
+        assert _terms(f"x = {text!r}") == set(), text
+
+
 def test_e10_t01_scanner_matches_whole_words_only() -> None:
     """Scanner matches whole words only."""
     assert _terms("surprise = 1\npricey_level = 2") == set()

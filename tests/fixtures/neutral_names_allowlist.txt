@@ -95,3 +95,4 @@ utils/clock.py:252  # E10-T03
 utils/clock.py:bars_per_day  # E10-T03
 utils/clock.py:trading  # E10-T03
 utils/errors.py:provider  # E10-T07b
+estimation/optimizers.py:returns  # E10-T07a
