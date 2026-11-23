@@ -92,9 +92,7 @@ def scan_source(source: str) -> list[tuple[int, str]]:
             add(line, _terms_in_identifier(node.id))
         elif isinstance(node, ast.Attribute):
             add(line, _terms_in_identifier(node.attr))
-        elif isinstance(node, ast.arg):
-            add(line, _terms_in_identifier(node.arg))
-        elif isinstance(node, ast.keyword) and node.arg is not None:
+        elif isinstance(node, ast.arg) or (isinstance(node, ast.keyword) and node.arg is not None):
             add(line, _terms_in_identifier(node.arg))
         elif isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
             add(line, _terms_in_identifier(node.name))
@@ -103,9 +101,10 @@ def scan_source(source: str) -> list[tuple[int, str]]:
         elif isinstance(node, ast.Constant):
             if isinstance(node.value, str):
                 add(line, _terms_in_text(node.value))
-            elif isinstance(node.value, int | float) and not isinstance(node.value, bool):
-                if node.value == 252:
-                    hits.append((line, _LITERAL_252))
+            elif (
+                isinstance(node.value, int | float) and not isinstance(node.value, bool) and node.value == 252
+            ):
+                hits.append((line, _LITERAL_252))
     for tok in tokenize.generate_tokens(io.StringIO(source).readline):
         if tok.type == tokenize.COMMENT:
             add(tok.start[0], _terms_in_text(tok.string))

@@ -10,9 +10,9 @@ import importlib.abc
 import importlib.machinery
 import os
 import re
-from pathlib import Path
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 from types import ModuleType
 
 os.environ.setdefault("REGIMEKIT_TYPECHECK", "1")
@@ -45,12 +45,11 @@ def install_core_only_finder() -> CoreOnlyFinder:
     return finder
 
 
+import jax  # noqa: E402
+import pytest  # noqa: E402
+from hypothesis import HealthCheck, settings  # noqa: E402
 
-import jax
-import pytest
-from hypothesis import HealthCheck, settings
-
-import regimekit
+import regimekit  # noqa: E402
 
 # Armed after `import regimekit`: until E10-T07b, `regimekit.project` still imports the finance providers
 # (finance_import_allowlist.txt), so the package itself cannot be imported with the finder already active.

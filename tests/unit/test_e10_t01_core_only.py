@@ -34,21 +34,32 @@ def _run(module: str, *, core_only: bool) -> str:
 
 @pytest.mark.parametrize(
     "module",
-    ["regimekit.finance", "regimekit.finance.providers", "yfinance", "fredapi", "pandas_datareader", "curl_cffi"],
+    [
+        "regimekit.finance",
+        "regimekit.finance.providers",
+        "yfinance",
+        "fredapi",
+        "pandas_datareader",
+        "curl_cffi",
+    ],
 )
 def test_e10_t01_core_only_blocks_finance_and_provider_packages(module: str) -> None:
+    """Core only blocks finance and provider packages."""
     assert _run(module, core_only=True).startswith("BLOCKED finance blocked")
 
 
 def test_e10_t01_without_the_flag_finance_imports() -> None:
+    """Without the flag finance imports."""
     assert _run("regimekit.finance", core_only=False) == "IMPORTED"
 
 
 def test_e10_t01_core_only_keeps_core_packages_importable() -> None:
+    """Core only keeps core packages importable."""
     assert _run("regimekit.engine", core_only=True) == "IMPORTED"
 
 
 def test_e10_t01_pr_workflow_has_a_core_only_job_that_uploads_failing_ids() -> None:
+    """Pr workflow has a core only job that uploads failing ids."""
     from ruamel.yaml import YAML
 
     doc = YAML(typ="safe").load(ROOT / ".github" / "workflows" / "pr.yml")
@@ -59,6 +70,7 @@ def test_e10_t01_pr_workflow_has_a_core_only_job_that_uploads_failing_ids() -> N
 
 
 def test_e10_t01_adr_0014_is_proposed() -> None:
+    """Adr 0014 is proposed."""
     text = (ROOT / "docs" / "adr" / "0014-two-repo-split.md").read_text(encoding="utf-8")
     assert text.rstrip().splitlines()[-1].startswith("proposed")
     assert "## Status" in text

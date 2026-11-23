@@ -48,6 +48,7 @@ def _terms(source: str) -> set[str]:
 
 
 def test_e10_t01_scanner_flags_identifiers() -> None:
+    """Scanner flags identifiers."""
     assert _terms("def price(): ...") == {"price"}
     assert _terms("log_return = 1") == {"log_return"}
     assert _terms("class TickerSet: ...") == {"ticker"}
@@ -56,6 +57,7 @@ def test_e10_t01_scanner_flags_identifiers() -> None:
 
 
 def test_e10_t01_scanner_flags_strings_comments_and_docstrings() -> None:
+    """Scanner flags strings comments and docstrings."""
     assert _terms('x = "the sharpe ratio"') == {"sharpe"}
     assert _terms("x = 1  # trading days") == {"trading"}
     assert _terms('def f():\n    """Max drawdown of the path."""\n') == {"drawdown"}
@@ -63,11 +65,13 @@ def test_e10_t01_scanner_flags_strings_comments_and_docstrings() -> None:
 
 
 def test_e10_t01_scanner_flags_literal_252() -> None:
+    """Scanner flags literal 252."""
     assert _terms("x = 1 / 252") == {"252"}
     assert _terms("x = 253") == set()
 
 
 def test_e10_t01_scanner_ignores_returns_section_and_keyword() -> None:
+    """Scanner ignores returns section and keyword."""
     doc = 'def f():\n    """Summary.\n\n    Returns:\n        A value.\n    """\n    return 1\n'
     assert _terms(doc) == set()
     assert _terms('def f():\n    """Returns the mask."""\n') == set()
@@ -75,6 +79,7 @@ def test_e10_t01_scanner_ignores_returns_section_and_keyword() -> None:
 
 
 def test_e10_t01_scanner_matches_whole_words_only() -> None:
+    """Scanner matches whole words only."""
     assert _terms("surprise = 1\npricey_level = 2") == set()
     assert _terms("symbolic = 1") == set()
 
@@ -104,12 +109,14 @@ def test_e10_t01_every_hit_is_allow_listed_and_no_entry_is_stale() -> None:
 
 
 def test_e10_t01_allow_list_entries_carry_a_removal_ticket() -> None:
+    """Allow list entries carry a removal ticket."""
     for name in (NEUTRAL_ALLOWLIST, IMPORT_ALLOWLIST):
         for entry, tag in _read_allowlist(name).items():
             assert TAG.fullmatch(tag), f"{name.name}: {entry!r} needs a tag E10-T02b..E10-T07b, got {tag!r}"
 
 
 def test_e10_t01_stale_entry_and_new_hit_are_detected() -> None:
+    """Stale entry and new hit are detected."""
     new, stale = _diff({"engine/base.py:price", "a.py:trading"}, {"a.py:trading", "b.py:symbol"})
     assert new == ["b.py:symbol"]
     assert stale == ["engine/base.py:price"]
@@ -148,17 +155,23 @@ def test_e10_t01_no_finance_import_beyond_the_allow_list() -> None:
     found = {
         f"{p.relative_to(SRC).as_posix()}:{m}" for p in _scope_python_files() for m in _finance_imports(p)
     }
-    assert not (found - allowed.keys()), "unlisted finance imports: " + ", ".join(sorted(found - allowed.keys()))
+    assert not (found - allowed.keys()), "unlisted finance imports: " + ", ".join(
+        sorted(found - allowed.keys())
+    )
     assert not (allowed.keys() - found), "stale entries: " + ", ".join(sorted(allowed.keys() - found))
 
 
 def test_e10_t01_finance_import_scanner_catches_absolute_and_relative(tmp_path: Path) -> None:
+    """Finance import scanner catches absolute and relative."""
     sample = tmp_path / "probe.py"
-    sample.write_text("import regimekit.finance.providers\nfrom ..finance import clocks\nfrom regimekit import finance\n")
+    sample.write_text(
+        "import regimekit.finance.providers\nfrom ..finance import clocks\nfrom regimekit import finance\n"
+    )
     found = _finance_imports(sample, ("regimekit", "cli"))
     assert found == ["regimekit.finance.providers", "regimekit.finance", "regimekit.finance"]
 
 
 @pytest.mark.parametrize("name", ["neutral_names_allowlist.txt", "finance_import_allowlist.txt"])
 def test_e10_t01_allow_list_files_exist(name: str) -> None:
+    """Allow list files exist."""
     assert (FIXTURES / name).is_file()

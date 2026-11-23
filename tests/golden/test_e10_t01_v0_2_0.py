@@ -18,10 +18,12 @@ pytestmark = pytest.mark.finance
 
 @pytest.fixture(scope="module")
 def fresh(tmp_path_factory: pytest.TempPathFactory) -> dict:  # type: ignore[type-arg]
+    """Recompute the pipeline once per module."""
     return compute(tmp_path_factory.mktemp("golden"))
 
 
 def test_e10_t01_golden_files_and_manifest_exist() -> None:
+    """Golden files and manifest exist."""
     for name in (*FILES, "manifest.json"):
         assert (GOLDEN_DIR / name).is_file(), name
     manifest = json.loads((GOLDEN_DIR / "manifest.json").read_text(encoding="utf-8"))
@@ -45,6 +47,7 @@ def test_e10_t01_one_flipped_bit_fails_the_comparison(fresh: dict) -> None:  # t
 
 
 def test_e10_t01_manifest_matches_the_scripts_settings() -> None:
+    """Manifest matches the scripts settings."""
     from scripts.make_golden_v0_2_0 import HORIZON, N_SIM, SEED
 
     manifest = json.loads((GOLDEN_DIR / "manifest.json").read_text(encoding="utf-8"))
