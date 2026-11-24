@@ -9,7 +9,7 @@ configurations (Part I, with `profile`, `data.primary`, ...) are migrated by `mi
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, ClassVar, Literal, cast
+from typing import Any, ClassVar, Literal
 
 import pydantic
 from pydantic import ConfigDict, Field, field_validator, model_validator
@@ -28,8 +28,9 @@ from regimekit.config.schema import (
     ProjectConfig,
     _Base,
 )
+from regimekit.finance import clocks as clocks  # registers the `trading` clock
 from regimekit.plugins import register
-from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR, TRADING_DAYS_PER_YEAR, Clock, days_to_steps
+from regimekit.utils.clock import days_to_steps, get_clock
 from regimekit.utils.errors import ConfigError
 
 SCHEMA_ID = "regimekit"
@@ -139,18 +140,6 @@ class FinanceDataSection(DataSection):
                 SeriesSource.model_validate(cov.source.options())
             except pydantic.ValidationError as exc:
                 raise _convert(exc, f"data.covariates[{i}].source") from exc
-        unknown = sorted(set(self.clock_options) - {"bars_per_day"})
-        if unknown:
-            raise ConfigError(
-                f"unknown clock option {unknown[0]!r}; known: bars_per_day",
-                path=f"data.clock_options.{unknown[0]}",
-            )
-        if self.bars_per_day < 1:
-            raise ConfigError("bars_per_day must be >= 1", path="data.clock_options.bars_per_day")
-        if self.clock == "steps" and self.bars_per_day != 1:
-            raise ConfigError(
-                "bars_per_day must be 1 under clock='steps'", path="data.clock_options.bars_per_day"
-            )
         return self
 
     @property
@@ -251,17 +240,16 @@ class FinanceConfig(ProjectConfig):
     def expected_sojourn_steps(self) -> float | None:
         """As the core, also counting `init_mean_sojourn_days` (converted with the clock's nominal step)."""
         clock = self.data.clock
-        if clock == "steps":
-            nominal_dt = 1.0
-        else:
-            nominal_dt = 1.0 / (TRADING_DAYS_PER_YEAR if clock == "trading" else CALENDAR_DAYS_PER_YEAR)
+        nominal_dt = (
+            1.0 if get_clock(clock).unit == "step" else 1.0 / float(get_clock(clock).days_per_year or 1.0)
+        )
         values: list[float] = []
         for pc in self.model.duration.params.values():
             if pc.init_mean_sojourn_steps is not None:
                 values.extend(pc.init_mean_sojourn_steps)
             elif pc.init_mean_sojourn_days is not None:
                 values.extend(
-                    days_to_steps(d, cast(Clock, clock), nominal_dt, self.data.bars_per_day)
+                    days_to_steps(d, clock, nominal_dt, self.data.clock_options)
                     for d in pc.init_mean_sojourn_days
                 )
             elif pc.init is not None and clock == "steps":
@@ -296,7 +284,9 @@ def migrate_1_to_2(raw: dict[str, Any]) -> dict[str, Any]:
     if "covariates" in data:
         data["covariates"] = covariates
     if "bars_per_day" in data:
-        data["clock_options"] = {**data.get("clock_options", {}), "bars_per_day": data.pop("bars_per_day")}
+        bars = data.pop("bars_per_day")
+        if data.get("clock", "trading") == "trading" or bars != 1:  # `1` is the no-op default of other clocks
+            data["clock_options"] = {**data.get("clock_options", {}), "bars_per_day": bars}
     prep = dict(data.get("preparation", {}))
     if "returns" in prep:
         prep["observation_transform"] = {"log": "log_returns"}.get(prep.pop("returns"), prep.get("returns"))
