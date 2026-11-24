@@ -4,9 +4,9 @@ cli/app.py:strategy  # E10-T07b
 data/cache.py:price  # E10-T04b
 data/cache.py:provider  # E10-T04b
 data/cache.py:symbol  # E10-T04b
-data/calendar.py:price  # E10-T07b
-data/calendar.py:returns  # E10-T07b
-data/calendar.py:symbol  # E10-T07b
+data/calendar.py:price  # E10-T05
+data/calendar.py:returns  # E10-T05
+data/calendar.py:symbol  # E10-T05
 data/calendar.py:trading  # E10-T05
 data/contracts.py:price  # E10-T04a
 data/contracts.py:provider  # E10-T04a
@@ -73,6 +73,5 @@ project.py:provider  # E10-T07b
 project.py:returns  # E10-T07b
 project.py:strategy  # E10-T07b
 project.py:symbol  # E10-T07b
-utils/clock.py:trading  # E10-T07b
 utils/errors.py:provider  # E10-T07b
 estimation/optimizers.py:returns  # E10-T07a

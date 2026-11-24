@@ -13,11 +13,11 @@ import numpy as np
 from pydantic import BaseModel, ConfigDict
 
 from regimekit.plugins import REGISTRY, provenance_of
+from regimekit.utils.clock import CALENDAR_DAYS_PER_YEAR
 from regimekit.utils.errors import ConfigError
 
 LastTime = np.datetime64 | int | np.integer
 
-CALENDAR_DAYS_PER_YEAR = 365.25
 NS_PER_DAY = 86_400 * 10**9
 
 
