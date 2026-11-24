@@ -220,7 +220,7 @@ def build_quality_report(
     return DataQualityReport(
         symbols=list(obs.series_names),
         n_rows=int(obs.values.shape[0]),
-        gaps=_gaps(_times(obs), str(obs.meta["interval"])),
+        gaps=_gaps(_times(obs), str(obs.meta.get("interval", "1d"))),
         duplicates=_duplicates(_times(obs)),
         non_positive_prices=_non_positive(obs),
         outliers=_outliers(obs),

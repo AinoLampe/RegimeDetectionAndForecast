@@ -311,10 +311,12 @@ class Cache:
 
     def store_prices(self, obs: ObservationSet, request: dict[str, Any]) -> str:
         """Write `obs` as the current generation of its key; return its snapshot id."""
-        interval, adjusted = str(obs.meta["interval"]), bool(obs.meta["adjusted"])
-        key = self.price_key(obs.source, obs.series_names, interval, adjusted)
         if obs.times is None:
             raise DataError("only observations with timestamps can be cached", path="times")
+        if "interval" not in obs.meta or "adjusted" not in obs.meta:
+            raise DataError("only provider observations (meta interval/adjusted) can be cached", path="meta")
+        interval, adjusted = str(obs.meta["interval"]), bool(obs.meta["adjusted"])
+        key = self.price_key(obs.source, obs.series_names, interval, adjusted)
         arrays = [pa.array(obs.times, type=pa.timestamp("ns"))]
         arrays += [
             pa.array(np.ascontiguousarray(obs.values[:, j]), type=pa.float64())

@@ -248,6 +248,14 @@ def align_covariate(
 
     raw_values = np.asarray(series.values, dtype=np.float64)
     grid_by_row = np.issubdtype(np.asarray(grid.times).dtype, np.integer)
+    if (
+        grid_by_row
+        and series.times is not None
+        and not np.issubdtype(np.asarray(series.times).dtype, np.integer)
+    ):
+        raise DataError(
+            f"covariate {series.name!r} has timestamps but the grid is a step index", path="data.covariates"
+        )
     if series.times is None or grid_by_row:
         return _align_by_row(grid, series, raw_values, lag, max_staleness)
     if np.issubdtype(np.asarray(series.times).dtype, np.integer):
