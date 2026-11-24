@@ -16,9 +16,9 @@ Register a component with the decorator; the name is the one used in the configu
 ```python
 from regimekit.plugins import register
 
+
 @register("init", "my_start")
-def my_start(data, spec, key):
-    ...
+def my_start(data, spec, key): ...
 ```
 
 `provenance` (shown in error messages) defaults to the origin of the calling module (`regimekit.core`,

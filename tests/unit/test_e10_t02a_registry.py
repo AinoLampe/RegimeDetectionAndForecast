@@ -174,7 +174,7 @@ def test_e10_t02a_no_module_level_name_dicts_remain() -> None:
 
 
 def test_e10_t02a_core_only_registry_has_no_finance_emissions() -> None:
-    """AC4: with HSMM_CORE_ONLY=1 no emission entry has provenance regimekit.finance."""
+    """AC4: with HSMM_CORE_ONLY=1 no emission has provenance regimekit.finance (vacuous until E10-T06)."""
     code = (
         "import sys; sys.path.insert(0, 'tests'); import conftest\n"
         "from regimekit.plugins import REGISTRY\n"
