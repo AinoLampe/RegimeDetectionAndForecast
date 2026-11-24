@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import platform
 import subprocess
 import sys
 import tempfile
@@ -115,12 +116,29 @@ def _git_sha() -> str:
         return "unknown"
 
 
+def _machine() -> str:
+    """CPU model and kernel, for diagnosing cross-machine differences (not compared)."""
+    model = platform.processor() or platform.machine()
+    try:
+        for line in Path("/proc/cpuinfo").read_text(encoding="utf-8").splitlines():
+            if line.startswith("model name"):
+                model = line.split(":", 1)[1].strip()
+                break
+    except OSError:
+        pass
+    return f"{model}; {platform.platform()}"
+
+
 def write_golden(fresh: dict[str, dict[str, np.ndarray] | pd.DataFrame], note: str) -> None:
     """Write the golden files and the manifest."""
     import jax
     import jaxlib
 
     GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
+    manifest_path = GOLDEN_DIR / "manifest.json"
+    notes: list[str] = (
+        json.loads(manifest_path.read_text(encoding="utf-8"))["notes"] if manifest_path.is_file() else []
+    )
     for name, value in fresh.items():
         if isinstance(value, pd.DataFrame):
             value.to_parquet(GOLDEN_DIR / name, index=False)
@@ -136,9 +154,10 @@ def write_golden(fresh: dict[str, dict[str, np.ndarray] | pd.DataFrame], note: s
         "horizon": HORIZON,
         "n_sim": N_SIM,
         "seed": SEED,
-        "notes": [note],
+        "machine": _machine(),
+        "notes": [*notes, note],
     }
-    (GOLDEN_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
+    manifest_path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
 def main() -> None:
