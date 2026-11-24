@@ -1,7 +1,8 @@
 """Clock-unit conversions: the registry-dispatching helpers (E10-T03, CLAUDE.md §3.2).
 
 The clocks themselves live in `regimekit.data.clocks` (core: `steps`, `calendar`) and in the
-application; this module looks them up in the registry, so that nothing else branches on a clock's name. `CALENDAR_DAYS_PER_YEAR` is the only year constant of the core.
+application; this module looks them up in the registry, so that nothing else branches on a clock's name.
+`CALENDAR_DAYS_PER_YEAR` is the only year constant of the core.
 """
 
 from __future__ import annotations
