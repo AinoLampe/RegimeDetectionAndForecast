@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Literal, cast
 
 import numpy as np
 import pandas as pd
@@ -65,13 +64,12 @@ class CsvProvider:
             columns.append(clip_window(frame, start, end)[column].astype("float64").rename(sym))
         joined = pd.concat(columns, axis=1, join="outer", sort=True)
         return ObservationSet(
-            symbols=tuple(symbols),
+            series_names=tuple(symbols),
             times=np.asarray(joined.index.values, dtype="datetime64[ns]"),
-            prices=joined.to_numpy(dtype="float64"),
-            interval=cast(Literal["1h", "1d", "1wk", "1mo"], interval),
-            adjusted=adjusted,
-            provider=self.name,
+            values=joined.to_numpy(dtype="float64"),
+            source=self.name,
             snapshot_id="",
+            meta={"interval": interval, "adjusted": adjusted},
         )
 
     def fetch_series(self, series_id: str, start: str, end: str | None) -> CovariateSeries:
@@ -82,7 +80,7 @@ class CsvProvider:
             name=series_id,
             times=times,
             values=frame["value"].to_numpy(dtype="float64"),
-            provider=self.name,
+            source=self.name,
             series_id=series_id,
             snapshot_id="",
             frequency=infer_frequency(times),

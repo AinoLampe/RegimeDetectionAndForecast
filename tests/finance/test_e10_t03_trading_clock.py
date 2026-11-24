@@ -21,7 +21,7 @@ def test_e10_t03_trading_constant_and_unit() -> None:
 def test_e10_t03_trading_clock_is_constant_across_a_holiday_gap() -> None:
     """E2-T06: a holiday gap in the timestamps does not change `Δ` under the trading clock."""
     times = np.array(["2024-12-23", "2024-12-24", "2024-12-27"], dtype="datetime64[ns]")
-    obs = ObservationSet(("X",), times, np.array([[1.0], [2.0], [3.0]]), "1d", True, "t", "s")
+    obs = ObservationSet(("X",), times, np.array([[1.0], [2.0], [3.0]]), "t", "s")
     grid = build_grid(obs, "drop", clock="trading")
     assert grid.dt.tolist() == [1 / 252, 1 / 252]
     assert grid.irregular is False

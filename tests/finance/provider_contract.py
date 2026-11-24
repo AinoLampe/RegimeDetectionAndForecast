@@ -40,19 +40,19 @@ def check_price_contract(
         obs = provider.fetch_prices(symbols, start, end, interval, adjusted)
         assert isinstance(obs, ObservationSet)
         _check_times(obs.times)
-        assert obs.prices.dtype == np.float64
-        assert obs.prices.shape == (len(obs.times), len(symbols))
-        assert obs.symbols == tuple(symbols)
-        assert obs.interval == interval
-        assert obs.adjusted is adjusted
-        assert obs.provider == provider.name
+        assert obs.values.dtype == np.float64
+        assert obs.values.shape == (len(obs.times), len(symbols))
+        assert obs.series_names == tuple(symbols)
+        assert obs.meta["interval"] == interval
+        assert obs.meta["adjusted"] is adjusted
+        assert obs.source == provider.name
         assert obs.snapshot_id == ""
         assert obs.times[0] >= np.datetime64(start, "ns")
         assert obs.times[-1] < np.datetime64(end, "ns") + np.timedelta64(1, "D")
     raw = provider.fetch_prices(symbols, start, end, interval, False)
     adj = provider.fetch_prices(symbols, start, end, interval, True)
     if adjusted_changes_prices:
-        assert not np.array_equal(raw.prices, adj.prices, equal_nan=True), "adjusted flag must change prices"
+        assert not np.array_equal(raw.values, adj.values, equal_nan=True), "adjusted flag must change prices"
     with pytest.raises(ProviderError):
         provider.fetch_prices([unknown], start, end, interval, False)
 
@@ -75,7 +75,7 @@ def check_series_contract(
     _check_times(ser.times)
     assert ser.values.dtype == np.float64
     assert ser.values.shape == ser.times.shape
-    assert ser.provider == provider.name
+    assert ser.source == provider.name
     assert ser.series_id == series_id
     assert ser.snapshot_id == ""
     assert ser.frequency

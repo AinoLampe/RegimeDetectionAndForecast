@@ -14,7 +14,7 @@ import importlib.util
 import time
 import warnings
 from collections.abc import Callable
-from typing import Literal, cast
+from typing import cast
 
 import numpy as np
 import pandas as pd
@@ -174,13 +174,12 @@ class YFinanceProvider:
         if frame.empty:
             raise ProviderError(f"no rows for {symbols} in [{start}, {end}]", path="data.start")
         return ObservationSet(
-            symbols=tuple(symbols),
+            series_names=tuple(symbols),
             times=np.asarray(frame.index.values, dtype="datetime64[ns]"),
-            prices=frame.to_numpy(dtype="float64"),
-            interval=cast(Literal["1h", "1d", "1wk", "1mo"], interval),
-            adjusted=adjusted,
-            provider=self.name,
+            values=frame.to_numpy(dtype="float64"),
+            source=self.name,
             snapshot_id="",
+            meta={"interval": interval, "adjusted": adjusted},
         )
 
     def fetch_series(self, series_id: str, start: str, end: str | None) -> CovariateSeries:

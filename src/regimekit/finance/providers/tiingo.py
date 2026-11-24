@@ -20,7 +20,7 @@ import urllib.parse
 import urllib.request
 from collections.abc import Callable, Mapping
 from pathlib import Path
-from typing import Any, Literal, cast
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -254,14 +254,12 @@ class TiingoProvider:
         if interval in PERIOD_FREQ:
             meta["resampled_from"] = "1d (last close of each period)"
         return ObservationSet(
-            symbols=tuple(symbols),
+            series_names=tuple(symbols),
             times=np.asarray(joined.index.values, dtype="datetime64[ns]"),
-            prices=joined.to_numpy(dtype="float64"),
-            interval=cast(Literal["1h", "1d", "1wk", "1mo"], interval),
-            adjusted=adjusted,
-            provider=self.name,
+            values=joined.to_numpy(dtype="float64"),
+            source=self.name,
             snapshot_id="",
-            meta=meta,
+            meta={"interval": interval, "adjusted": adjusted, **meta},
         )
 
     def fetch_series(self, series_id: str, start: str, end: str | None) -> CovariateSeries:

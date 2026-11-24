@@ -188,7 +188,7 @@ class FredProvider:
             name=series_id,
             times=np.asarray(frame.index.values, dtype="datetime64[ns]"),
             values=frame["value"].to_numpy(dtype="float64"),
-            provider=self.name,
+            source=self.name,
             series_id=series_id,
             snapshot_id="",
             frequency=FREQUENCIES[freq_short],
