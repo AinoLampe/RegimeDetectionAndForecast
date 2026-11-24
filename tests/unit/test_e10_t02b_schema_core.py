@@ -55,26 +55,54 @@ def test_e10_t02b_migrated_config_builds_the_same_model_as_the_v2_fixture() -> N
     assert "emission.mu" in [n for n, _ in layout]
 
 
+def _core_raw() -> dict[str, Any]:
+    """The v2 Appendix A with every finance-only key removed, so that a core parse succeeds."""
+    raw = _v2()
+    raw["data"].pop("cache")
+    raw["data"].pop("clock_options")
+    raw["evaluation"].pop("strategy")
+    raw["output"]["write"] = [w for w in raw["output"]["write"] if w != "strategy"]
+    for section in ("emission", "duration"):
+        for params in raw["model"][section]["params"].values():
+            days = params.pop("init_mean_sojourn_days", None)
+            if days is not None:
+                params["init_mean_sojourn_steps"] = days
+    return raw
+
+
+def test_e10_t02b_the_stripped_config_parses_as_core() -> None:
+    """The base of the rejection tests is a valid core config."""
+    cfg = parse_project_config(_core_raw())
+    assert type(cfg) is ProjectConfig
+
+
 @pytest.mark.parametrize(
-    ("key_path", "value"),
+    ("key_path", "value", "path"),
     [
-        (("profile",), "finance"),
-        (("data", "primary"), {"provider": "csv", "symbols": ["A"], "interval": "1d", "start": "2020-01-01"}),
-        (("data", "bars_per_day"), 1),
-        (("evaluation", "strategy"), {"type": "regime_long_flat"}),
+        (("profile",), "finance", "profile"),
+        (
+            ("data", "primary"),
+            {"provider": "csv", "symbols": ["A"], "interval": "1d", "start": "2020-01-01"},
+            "data.primary",
+        ),
+        (("data", "bars_per_day"), 1, "data.bars_per_day"),
+        (("evaluation", "strategy"), {"type": "regime_long_flat"}, "evaluation.strategy"),
     ],
 )
-def test_e10_t02b_core_rejects_finance_keys(key_path: tuple[str, ...], value: Any) -> None:  # noqa: ANN401
+def test_e10_t02b_core_rejects_finance_keys(
+    key_path: tuple[str, ...],
+    value: Any,  # noqa: ANN401
+    path: str,
+) -> None:
     """AC2: the core ProjectConfig rejects `profile`, `data.primary`, `bars_per_day` and `strategy`."""
-    raw = _v2()
-    raw["data"]["source"] = {"kind": "provider", **raw["data"]["source"]}
+    raw = _core_raw()
     node = raw
     for part in key_path[:-1]:
         node = node[part]
     node[key_path[-1]] = value
     with pytest.raises(ConfigError) as err:
         parse_project_config(raw)
-    assert err.value.path is not None
+    assert err.value.path == path
 
 
 def test_e10_t02b_finance_accepts_them_only_through_migration_or_v2_locations() -> None:
