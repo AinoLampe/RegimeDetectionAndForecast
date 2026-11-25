@@ -40,9 +40,7 @@ from regimekit.evaluation.compare import CompareEntry, check_snapshots, comparis
 from regimekit.evaluation.report import build_report, versions
 from regimekit.evaluation.results import BacktestResult
 from regimekit.evaluation.strategies import make_strategy
-from regimekit.finance import FinanceConfig, PriceSource
-from regimekit.finance.cache import Cache, SnapshotPolicy
-from regimekit.finance.providers.source import FetchContext
+from regimekit.finance import Cache, FetchContext, FinanceConfig, PriceSource, SnapshotPolicy
 from regimekit.inference.covariate_forecasters import CovariateForecaster, make_forecaster
 from regimekit.inference.decode import decode as decode_posterior
 from regimekit.inference.forecast import MonteCarloForecaster
