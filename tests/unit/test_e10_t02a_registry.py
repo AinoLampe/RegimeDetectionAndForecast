@@ -107,6 +107,7 @@ def test_e10_t02a_decorator_registers_and_returns_the_object() -> None:
 def test_e10_t02a_part_one_components_are_registered() -> None:
     """Every Part I family, init strategy and forecaster resolves through the registry."""
     import regimekit.evaluation.metrics.registry as metrics
+    import regimekit.finance.emission
     import regimekit.inference.covariate_forecasters
     import regimekit.model.build  # noqa: F401
 
@@ -129,6 +130,7 @@ def test_e10_t02a_part_one_components_are_registered() -> None:
 
 def test_e10_t02a_config_resolves_every_part_one_family_through_the_registry() -> None:
     """The config -> ModelSpec lookups are views over the registry (no private dicts)."""
+    import regimekit.finance.emission  # noqa: F401  (registers `gbm`)
     from regimekit.model.build import DURATION_FAMILIES, EMISSION_FAMILIES
 
     assert not isinstance(EMISSION_FAMILIES, dict)
