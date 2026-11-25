@@ -81,7 +81,7 @@ def test_e10_t02a_all_kinds_exist_and_clock_transform_preset_start_empty_or_regi
 
 def test_e10_t02a_decorator_default_provenance_is_the_callers_origin() -> None:
     """The decorator labels components registered from core, finance and extension modules."""
-    assert provenance_of("regimekit.model.emission.gbm") == "regimekit.core"
+    assert provenance_of("regimekit.model.emission.gaussian") == "regimekit.core"
     assert provenance_of("regimekit.finance.providers.csv") == "regimekit.finance"
     assert provenance_of("regimekit.finance") == "regimekit.finance"
     assert provenance_of("myext.emission.foo") == "myext"
@@ -110,7 +110,7 @@ def test_e10_t02a_part_one_components_are_registered() -> None:
     import regimekit.inference.covariate_forecasters
     import regimekit.model.build  # noqa: F401
 
-    assert set(REGISTRY.names("emission")) == {"gbm", "product", "student_t"}
+    assert set(REGISTRY.names("emission")) == {"gaussian", "gbm", "product", "student_t"}
     assert set(REGISTRY.names("duration")) == {
         "gamma",
         "geometric",
@@ -133,7 +133,7 @@ def test_e10_t02a_config_resolves_every_part_one_family_through_the_registry() -
 
     assert not isinstance(EMISSION_FAMILIES, dict)
     assert not isinstance(DURATION_FAMILIES, dict)
-    assert set(EMISSION_FAMILIES) == {"gbm", "student_t"}  # `product` has no config name
+    assert set(EMISSION_FAMILIES) == {"gaussian", "gbm", "student_t"}  # `product` has no config name
     assert set(DURATION_FAMILIES) == set(REGISTRY.names("duration"))
     for name in DURATION_FAMILIES:
         assert DURATION_FAMILIES[name] is REGISTRY.get("duration", name)

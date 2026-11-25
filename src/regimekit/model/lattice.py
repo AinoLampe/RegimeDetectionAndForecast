@@ -29,7 +29,9 @@ if TYPE_CHECKING:
 
 # Emission blocks that place a state on the observation scale; if all are `fixed` the states are
 # identified by construction (a lattice). Coefficient blocks (`gamma`, `delta`) and `nu` do not count.
-_IDENTIFYING_EMISSION = frozenset({"emission.mu", "emission.sigma", "emission.m", "emission.s"})
+_IDENTIFYING_EMISSION = frozenset(
+    {"emission.mu", "emission.sigma", "emission.mean", "emission.scale", "emission.m", "emission.s"}
+)
 
 
 @dataclass(frozen=True, eq=False)
@@ -83,7 +85,7 @@ def validate_lattice(cfg: ProjectConfig) -> None:
         )
 
 
-def apply_ordering(specs: tuple[ParamSpec, ...], name: str = "emission.sigma") -> tuple[ParamSpec, ...]:
+def apply_ordering(specs: tuple[ParamSpec, ...], name: str = "emission.scale") -> tuple[ParamSpec, ...]:
     """Return `specs` with `constraint="increasing"` set on the spec called `name`.
 
     The `increasing` bijector acts on a 1-D `(N,)` cell, so an `(N, 1)` spec is squeezed to `(N,)`
@@ -171,7 +173,7 @@ def _relabel_transition(theta: Params, n_states: int, order: int, perm: np.ndarr
     return out
 
 
-def post_sort_states(theta: Params, spec: ModelSpec, by: str = "emission.sigma") -> tuple[Params, np.ndarray]:
+def post_sort_states(theta: Params, spec: ModelSpec, by: str = "emission.scale") -> tuple[Params, np.ndarray]:
     """Relabel states so `theta[by]` (first series if `(N, M)`) is ascending.
 
     Returns `(theta_sorted, perm)` with `perm[new] = old` (stable `argsort`): new state `i` is old state
