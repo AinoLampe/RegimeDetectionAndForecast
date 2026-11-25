@@ -62,17 +62,27 @@ ENTRY_POINTS: tuple[EntryPoint, ...] = get_args(EntryPoint)
 _log = get_logger(__name__)
 
 
+def _step(t: Any) -> int:  # noqa: ANN401
+    """A step index from `t`; time-less data takes integer train bounds."""
+    try:
+        return int(t)
+    except (TypeError, ValueError):
+        raise DataError(
+            f"time-less data needs an integer train bound (a step index), got {t!r}", path="train_end"
+        ) from None
+
+
 def _at_or_before(times: np.ndarray, t: Any) -> np.ndarray:  # noqa: ANN401
     """`times <= t` for timestamps or a step index."""
     if np.issubdtype(times.dtype, np.integer):
-        return np.asarray(times <= int(t))
+        return np.asarray(times <= _step(t))
     return np.asarray(times <= _utc_ns(t))
 
 
 def _at_or_after(times: np.ndarray, t: Any) -> np.ndarray:  # noqa: ANN401
     """`times >= t` for timestamps or a step index."""
     if np.issubdtype(times.dtype, np.integer):
-        return np.asarray(times >= int(t))
+        return np.asarray(times >= _step(t))
     return np.asarray(times >= _utc_ns(t))
 
 
