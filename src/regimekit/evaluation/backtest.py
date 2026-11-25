@@ -13,7 +13,7 @@ from __future__ import annotations
 import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 import jax.numpy as jnp
 import numpy as np
@@ -54,6 +54,7 @@ _LOG = get_logger("regimekit.backtest")
 _YEARS_TOL = 1e-9  # elapsed-time comparisons: a sum of equal steps must count as the exact length
 
 
+@runtime_checkable
 class OriginHook(Protocol):
     """An extension point of the walk-forward loop (E10-T07a): called at every forecast origin.
 

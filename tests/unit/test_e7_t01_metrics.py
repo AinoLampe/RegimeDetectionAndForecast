@@ -176,7 +176,7 @@ def test_e7_t01_register_rejects_duplicates_unless_replacing() -> None:
 
 def test_e7_t01_strategy_metrics_declare_their_need_and_refuse_to_run() -> None:
     """`sharpe`/`max_drawdown` resolve (Appendix A), declare `strategy` and refuse to run without a trace."""
-    import regimekit.finance  # noqa: F401, PLC0415  (registers the finance metrics)
+    import regimekit.finance  # noqa: F401  (registers the finance metrics)
 
     for name in ("sharpe", "max_drawdown"):
         m = metric(name)

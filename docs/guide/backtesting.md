@@ -89,7 +89,7 @@ padded length.
 ## Strategies
 
 `evaluation.strategy` maps the state of knowledge at an origin to positions in `[-1, 1]`
-(`regimekit.evaluation.strategies.make_strategy(cfg, nominal_dt, n_series)`). A position is *decided* at an
+(`regimekit.finance.strategies.make_strategy(cfg, nominal_dt, n_series)`). A position is *decided* at an
 origin from its filtered regime probabilities and forecast and *held* over the next step; the strategy
 return of a step is, in the log-return approximation,
 
@@ -105,7 +105,8 @@ and the equity curve is `exp(cumsum(r))`.
   one-step forecast (annualized on the trading/calendar clocks, per step on `steps`); long when the
   predictive mean is non-negative, otherwise flat, or short with the same magnitude when `allow_short`.
 
-`run_backtest(..., strategy=)` returns the trace in `BacktestResult.strategy`: `fold, time, position`
+`run_backtest(cfg, data_loader, seed, hooks=[StrategyHook(...)])` returns the trace in
+`BacktestResult.extras["strategy"]` (`regimekit.finance.strategy_frame(result)`): `fold, time, position`
 (`position_<m>` for `M > 1`), `return`, `gross` (`position . y`, before costs), `equity`, `turnover`
 (`sum_m |change|`) and `dt`; `time` is the end of the step the position was held over. Where an origin's
 next return is missing no position is recorded. The metrics are evaluated on each fold's slice (equity restarts
@@ -124,3 +125,12 @@ at 1) and stored with `horizon == 0`:
 configured strategy and writes the files listed in [Outputs](outputs.md#backtest-files), including
 `report.md`. `regimekit compare CONFIG... [--reuse] [--allow-mixed] [--metric M]` backtests several
 configurations on the same data snapshot and writes `compare.parquet` / `compare.md`.
+
+## Origin hooks
+
+`run_backtest(cfg, data_loader, seed, hooks=(), on_fold=None)` takes `data_loader() -> (ObservationSet, covariates)`
+and a sequence of `OriginHook`s (E10-T07a). A hook has a `name`, an `on_origin(fold, origin, posterior,
+forecast, data)` that gives the values of one row (or `{}` for none) and a `finalize(rows)` that builds the frame
+stored in `BacktestResult.extras[name]`. Metrics whose `needs` name a hook are evaluated per fold on that fold's
+slice of the frame (`horizon == 0`, context `extras`). `build_report(..., extra_sections=[...])` appends the
+sections the hooks contribute (the finance application adds the strategy table).
