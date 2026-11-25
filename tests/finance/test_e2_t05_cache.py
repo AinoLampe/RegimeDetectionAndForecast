@@ -11,9 +11,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from regimekit.data.cache import Cache, CacheableProvider, CachedProvider, SnapshotPolicy
 from regimekit.data.contracts import CovariateSeries, ObservationSet
+from regimekit.finance.cache import Cache, CacheableProvider, CachedProvider, SnapshotPolicy
 from regimekit.utils.errors import ConfigError, DataError
+
+pytestmark = pytest.mark.finance
 
 START, END = "2024-01-02", "2024-06-28"
 NOW = datetime(2024, 7, 1, 12, 0, tzinfo=UTC)

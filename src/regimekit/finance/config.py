@@ -29,7 +29,6 @@ from regimekit.config.schema import (
     _Base,
 )
 from regimekit.finance import clocks as clocks  # registers the `trading` clock
-from regimekit.plugins import register
 from regimekit.utils.clock import days_to_steps, get_clock
 from regimekit.utils.errors import ConfigError
 
@@ -37,7 +36,6 @@ SCHEMA_ID = "regimekit"
 SCHEMA_VERSION = 2
 
 
-@register("source", "provider")
 class PriceSource(_Base):
     """Options of the `provider` source kind (`data.source:`): the primary price series to fetch."""
 
@@ -55,6 +53,9 @@ class SeriesSource(_Base):
 
     provider: str
     series: str
+
+
+CovariateProviderOpts = SeriesSource  # the options of a covariate's `provider` source
 
 
 class CacheCfg(_Base):

@@ -14,8 +14,9 @@ so a pinned snapshot stays replayable and E2-T08 can compare the two latest gene
 (no pandas metadata, no statistics, fixed compression), so identical data gives identical bytes and ids for a
 given pyarrow version (recorded in the meta file).
 
-The data layer must not import `regimekit.finance` (profile rule), so the wrapped provider is typed by the
-structural `CacheableProvider` protocol declared here; the finance adapters satisfy it.
+The cache lives in the finance package (E10-T04b); the core keeps only the content hashes of
+`regimekit.data.provenance`. The wrapped provider is typed by the structural `CacheableProvider` protocol
+declared here.
 """
 
 from __future__ import annotations
