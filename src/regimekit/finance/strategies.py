@@ -19,13 +19,17 @@ import warnings
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
+import jax
 import jax.numpy as jnp
 import numpy as np
 import pandas as pd
 
-from regimekit.utils.errors import ConfigError, NumericalError
+from regimekit.utils.errors import ConfigError, DataError, NumericalError
 
 if TYPE_CHECKING:
+    from regimekit.data.contracts import PreparedDataset
+    from regimekit.engine.base import Posterior
+    from regimekit.evaluation.results import BacktestResult
     from regimekit.inference.results import ForecastResult, PosteriorResult
     from regimekit.utils.typing import Array
 
@@ -253,3 +257,61 @@ def strategy_trace(
         }
     )
     return pd.DataFrame(frame)
+
+
+class StrategyHook:
+    """The strategy as a walk-forward `OriginHook` named `strategy` (E10-T07a).
+
+    At every origin the position is decided from the filtered regime probabilities and the forecast, and
+    held over the next step; `finalize` builds the strategy table (`strategy_trace`), which the backtest
+    returns as `BacktestResult.extras["strategy"]` and the strategy metrics read per fold.
+    """
+
+    name = "strategy"
+
+    def __init__(self, strategy: Strategy, cost_bps: float = 0.0) -> None:
+        """Wrap `strategy`; a rule asking for smoothed probabilities warns (`check_backtest_admissible`)."""
+        check_backtest_admissible(strategy)
+        self.strategy = strategy
+        self.cost_bps = cost_bps
+
+    def on_origin(
+        self,
+        fold: int,
+        origin: int,
+        posterior: Posterior,
+        forecast: ForecastResult | None,
+        data: PreparedDataset,
+    ) -> dict[str, Any]:
+        """The position decided at `origin` and the row it is held over; empty when that row is missing."""
+        del fold
+        nxt = origin + 1
+        if not bool(np.asarray(data.mask)[nxt].all()):
+            return {}
+        filtered = jax.nn.softmax(posterior.log_alpha[-1]) @ posterior.index.collapse
+        return {
+            "position": np.asarray(self.strategy.decide(filtered, forecast), dtype=np.float64),
+            "time": np.asarray(data.times)[nxt],
+            "y": np.asarray(data.observations)[nxt],
+            "dt": float(np.asarray(data.dt)[nxt]),
+        }
+
+    def finalize(self, rows: list[dict[str, Any]]) -> pd.DataFrame:
+        """The strategy table: the position decided at origin `o` is held over row `o + 1`."""
+        if not rows:
+            raise DataError(
+                "the strategy recorded no position: every origin's next return is missing", path="data"
+            )
+        return strategy_trace(
+            np.asarray([row["time"] for row in rows]),
+            np.vstack([row["position"] for row in rows]),
+            np.vstack([row["y"] for row in rows]),
+            np.asarray([row["dt"] for row in rows]),
+            self.cost_bps,
+            fold=np.asarray([row["fold"] for row in rows], dtype=np.int64),
+        )
+
+
+def strategy_frame(result: BacktestResult) -> pd.DataFrame | None:
+    """The strategy table of a backtest (`extras["strategy"]`), or `None` without a strategy."""
+    return result.extras.get("strategy")
