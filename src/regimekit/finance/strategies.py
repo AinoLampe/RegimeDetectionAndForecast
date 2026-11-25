@@ -274,7 +274,6 @@ class StrategyHook:
         check_backtest_admissible(strategy)
         self.strategy = strategy
         self.cost_bps = cost_bps
-        self._data: PreparedDataset | None = None
 
     def on_origin(
         self,
@@ -284,27 +283,30 @@ class StrategyHook:
         forecast: ForecastResult | None,
         data: PreparedDataset,
     ) -> dict[str, Any]:
-        """The position decided at `origin`; empty when the next observation is missing."""
+        """The position decided at `origin` and the row it is held over; empty when that row is missing."""
         del fold
-        self._data = data
-        if not bool(np.asarray(data.mask)[origin + 1].all()):
+        nxt = origin + 1
+        if not bool(np.asarray(data.mask)[nxt].all()):
             return {}
         filtered = jax.nn.softmax(posterior.log_alpha[-1]) @ posterior.index.collapse
-        return {"position": np.asarray(self.strategy.decide(filtered, forecast), dtype=np.float64)}
+        return {
+            "position": np.asarray(self.strategy.decide(filtered, forecast), dtype=np.float64),
+            "time": np.asarray(data.times)[nxt],
+            "y": np.asarray(data.observations)[nxt],
+            "dt": float(np.asarray(data.dt)[nxt]),
+        }
 
     def finalize(self, rows: list[dict[str, Any]]) -> pd.DataFrame:
         """The strategy table: the position decided at origin `o` is held over row `o + 1`."""
-        if not rows or self._data is None:
+        if not rows:
             raise DataError(
                 "the strategy recorded no position: every origin's next return is missing", path="data"
             )
-        grid = self._data
-        index = np.asarray([row["origin"] + 1 for row in rows], dtype=np.int64)
         return strategy_trace(
-            np.asarray(grid.times)[index],
+            np.asarray([row["time"] for row in rows]),
             np.vstack([row["position"] for row in rows]),
-            np.asarray(grid.observations)[index],
-            np.asarray(grid.dt)[index],
+            np.vstack([row["y"] for row in rows]),
+            np.asarray([row["dt"] for row in rows]),
             self.cost_bps,
             fold=np.asarray([row["fold"] for row in rows], dtype=np.int64),
         )

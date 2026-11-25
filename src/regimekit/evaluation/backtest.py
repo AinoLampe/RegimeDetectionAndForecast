@@ -537,6 +537,9 @@ def _with_extra_metrics(
     fold_frame: pd.DataFrame, extras: Mapping[str, pd.DataFrame], metrics: Sequence[Metric]
 ) -> pd.DataFrame:
     """`fold_frame` plus the metrics of each fold's slice of the hooks' frames (`horizon == 0`)."""
+    for name, frame in extras.items():
+        if "fold" not in frame.columns:
+            raise DataError(f"the frame of the hook {name!r} has no `fold` column", path=f"extras.{name}")
     rows: list[tuple[int, int, str, float]] = []
     folds = sorted({int(f) for frame in extras.values() for f in frame["fold"].unique()})
     for fold in folds:

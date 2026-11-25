@@ -52,13 +52,19 @@ def test_e10_t07a_the_hook_skips_origins_whose_next_observation_is_missing() -> 
     )
     mask = np.ones((6, 1), dtype=bool)
     mask[3, 0] = False
-    data = SimpleNamespace(mask=jnp.asarray(mask))
+    data = SimpleNamespace(
+        mask=jnp.asarray(mask),
+        times=np.arange(6),
+        observations=jnp.arange(6.0).reshape(6, 1),
+        dt=jnp.ones(6),
+    )
     posterior = SimpleNamespace(
         log_alpha=jnp.log(jnp.asarray([[0.7, 0.3]])), index=SimpleNamespace(collapse=jnp.eye(2))
     )
     assert hook.on_origin(0, 2, posterior, None, data) == {}  # type: ignore[arg-type]
     row = hook.on_origin(0, 1, posterior, None, data)  # type: ignore[arg-type]
     assert float(row["position"][0]) == 0.0  # P(regime 0) = 0.7 > 0.5: flat
+    assert (row["time"], float(row["y"][0]), row["dt"]) == (2, 2.0, 1.0)  # the row the position is held over
 
 
 def test_e10_t07a_strategy_metrics_read_extras_and_declare_their_direction() -> None:

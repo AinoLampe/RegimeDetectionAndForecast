@@ -277,7 +277,11 @@ class ModelStore:
                 path=str(src / MANIFEST),
             )
         for name in manifest.get("extensions", {}):
-            if importlib.util.find_spec(name) is None:
+            try:
+                found = importlib.util.find_spec(name) is not None
+            except (ImportError, ValueError):
+                found = False
+            if not found:
                 raise PersistenceError(
                     f"{src} needs the extension package {name!r}, which is not importable", path=name
                 )
