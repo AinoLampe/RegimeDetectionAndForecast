@@ -168,7 +168,7 @@ class FinanceEmissionCfg(EmissionCfg):
     @classmethod
     def _register_finance_emissions(cls, value: object) -> object:
         """Registers the finance families (`gbm`) before the family name is checked against the registry."""
-        import regimekit.finance.emission  # noqa: F401, PLC0415
+        import regimekit.finance.emission  # noqa: F401
 
         return value
 

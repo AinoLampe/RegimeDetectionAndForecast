@@ -139,7 +139,7 @@ def test_e5_t06_unsupported_models_raise_config_error() -> None:
         with pytest.raises(ConfigError, match="covariates"):
             em_fit(case.spec, case.data, _cfg(), 0)
     student = make_case("student_t", "negbin", 1, t_len=60)
-    with pytest.raises(ConfigError, match="gbm"):
+    with pytest.raises(ConfigError, match="gaussian"):
         em_fit(student.spec, student.data, _cfg(), 0)
     explicit = make_case("gbm", "gamma", 1, t_len=60)
     with pytest.raises(ConfigError, match="expanded engine"):

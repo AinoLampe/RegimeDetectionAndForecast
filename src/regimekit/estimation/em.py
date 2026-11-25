@@ -1,6 +1,7 @@
 """EM (Baum-Welch) cross-check for the covariate-free Gaussian / geometric-or-negbin model (E5-T06, v1.x).
 
-Scope (anything else raises `ConfigError`): `GaussianFamily` (or an alias) without covariate links, a single series, the
+Scope (anything else raises `ConfigError`): `GaussianFamily` (or an alias) without covariate links, a single
+series, the
 expanded engine, `transition.order == 1` with `JumpTransition` (`transition.pi_rows`, no covariates), a
 geometric or negative-binomial phase duration (`duration.rate`, no covariates), `initial: uniform`, and a
 regular time grid. Parameters in `prior` mode are estimated by maximum likelihood (EM ignores priors).
