@@ -76,13 +76,47 @@ def test_e10_t06_gbm_options_cannot_be_changed_by_the_config() -> None:
     inputs = BuildInputs(n_series=1, cov_names=cov_names, clock="trading", nominal_dt=1 / 252)
     spec = build_model_spec_from(cfg, inputs)
     assert isinstance(spec.emission, GBMFamily)
-    bad = cfg.model_copy(
-        update={
-            "model": cfg.model.model_copy(
-                update={"emission": cfg.model.emission.model_copy(update={"scale_by_dt": False})}
-            )
-        }
+    for option in ("scale_by_dt", "ito_correction"):
+        bad = cfg.model_copy(
+            update={
+                "model": cfg.model.model_copy(
+                    update={"emission": cfg.model.emission.model_copy(update={option: False})}
+                )
+            }
+        )
+        with pytest.raises(ConfigError) as info:
+            build_model_spec_from(bad, inputs)
+        assert info.value.path == f"model.emission.{option}"
+
+
+def test_e10_t06_appendix_a_keeps_the_v0_2_0_parameter_layout() -> None:
+    """AC3: the Appendix A model builds the Part I parameter names, which 0.1.x / 0.2.x bundles store."""
+    cfg = load_config(ROOT / "tests/fixtures/configs/v2/appendix_a_v2.yaml", FinanceConfig)
+    cov_names = {
+        ep: tuple(c.name for c in cfg.data.covariates if ep in c.use_in)
+        for ep in ("transition", "duration", "emission")
+    }
+    spec = build_model_spec_from(cfg, BuildInputs(1, cov_names, "trading", 1 / 252))
+    names = {s.name for s in spec.param_specs}
+    assert {"emission.mu", "emission.sigma"} <= names
+    assert not {"emission.mean", "emission.scale"} & names
+
+
+def test_e10_t06_foreign_covariate_keys_and_contradicting_ito_are_rejected() -> None:
+    """`gbm`: `drift`/`log_vol`, `gaussian`: `mean`/`log_scale`; `ito_correction` is fixed."""
+    gbm = EmissionCfg(
+        family="gbm",
+        params={"mu": ParamCfg(mode="free"), "sigma": ParamCfg(mode="free")},
+        covariates={"mean": ["a"]},  # type: ignore[arg-type]
     )
     with pytest.raises(ConfigError) as info:
-        build_model_spec_from(bad, inputs)
-    assert info.value.path == "model.emission.scale_by_dt"
+        GBMFamily.from_config(gbm, 3, 1, ("a",))
+    assert info.value.path == "model.emission.covariates.mean"
+    gau = EmissionCfg(
+        family="gaussian",
+        params={"mean": ParamCfg(mode="free"), "scale": ParamCfg(mode="free")},
+        covariates={"drift": ["a"]},  # type: ignore[arg-type]
+    )
+    with pytest.raises(ConfigError) as info:
+        GaussianFamily.from_config(gau, 3, 1, ("a",))
+    assert info.value.path == "model.emission.covariates.drift"

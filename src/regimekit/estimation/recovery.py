@@ -3,7 +3,7 @@
 CLAUDE.md §3.2 places the harness here (not `tests/recovery/harness.py`): it is pure (no pytest, no
 file I/O), so `tests/recovery/test_e5_t05a_recovery.py` (`-m slow`) and E5-T05b's `selftest` CLI both
 import it directly. Six scenarios (concept Appendix D / `E5-T05a` ticket §Context), `N=3`, daily
-(`clock="trading"`) grid, `constraint="increasing"` on `emission.sigma` in every scenario (an
+(`clock="trading"`) grid, `constraint="increasing"` on `emission.scale` in every scenario (an
 identifiability guard, so the MAP fit never needs post-hoc relabelling). Models are assembled by hand
 (`tests/helpers/objective_fixtures.py`'s pattern) since `model/build.py` (CLAUDE.md §3.3) builds from a
 project *config*, not from arbitrary truth parameters.

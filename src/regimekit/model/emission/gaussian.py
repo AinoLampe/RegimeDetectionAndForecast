@@ -208,6 +208,13 @@ class GaussianFamily:
                     path=f"model.emission.params.{required}",
                 )
         covs = cfg.covariates
+        for foreign in {"mean", "log_scale", "drift", "log_vol"} - {cls.mean_cov_key, cls.scale_cov_key}:
+            if getattr(covs, foreign):
+                raise ConfigError(
+                    f"the {cls.name_for_errors()} emission takes the covariate keys "
+                    f"'{cls.mean_cov_key}' and '{cls.scale_cov_key}', not '{foreign}'",
+                    path=f"model.emission.covariates.{foreign}",
+                )
         mean_cov = getattr(covs, cls.mean_cov_key)
         scale_cov = getattr(covs, cls.scale_cov_key)
         try:
