@@ -123,3 +123,18 @@ def test_e10_t07b_the_core_app_in_a_fresh_process_has_no_provider_exit_code() ->
         [sys.executable, "-c", code], cwd=ROOT, capture_output=True, text=True, check=True
     ).stdout.splitlines()
     assert out == ["[1, 2, 3, 4]", "False"]
+
+
+def test_e10_t07b_time_less_data_loads_with_a_step_index_train_end(tmp_path: Path) -> None:
+    """`_train_end` of time-less observations is a step index (`initial_train_steps - 1`, else the last)."""
+    import numpy as np
+
+    from regimekit.config.schema import BacktestCfg
+    from regimekit.data.contracts import ObservationSet
+    from regimekit.project import _train_end
+
+    obs = ObservationSet(("x",), None, np.zeros((50, 1)), "memory", "s")
+    cfg = cc.core_config(tmp_path).evaluation.backtest
+    assert isinstance(cfg, BacktestCfg)
+    assert _train_end(obs, cfg.model_copy(update={"initial_train_steps": 30})) == 29
+    assert _train_end(obs, cfg.model_copy(update={"initial_train_steps": None, "initial_train": 1.0})) == 49

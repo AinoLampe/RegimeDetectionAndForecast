@@ -53,3 +53,20 @@ def test_e10_t07b_console_scripts() -> None:
     scripts = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["scripts"]
     assert scripts["regimekit"] == "regimekit.finance.cli:main"
     assert scripts["regimekit-core"] == "regimekit.cli.app:main"
+
+
+def test_e10_t07b_the_recovery_grid_uses_the_trading_clock_when_finance_is_imported() -> None:
+    """`recovery_clock()` picks the year clock with the fewest days per year: `trading` with finance."""
+    from regimekit.estimation.recovery import nominal_dt, recovery_clock
+
+    assert recovery_clock() == "trading"
+    assert nominal_dt() == 1 / 252
+
+
+def test_e10_t07b_offline_loading_is_blocked_only_for_network_sources() -> None:
+    """`needs_network` is False in the core, and True for the finance `provider` source."""
+    from regimekit.config.yaml_io import load_config
+
+    cfg = load_config(ROOT / "tests/fixtures/configs/v2/appendix_a_v2.yaml", FinanceConfig)
+    assert FinanceProject(cfg).needs_network() is True
+    assert Project.needs_network(FinanceProject(cfg)) is False

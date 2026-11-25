@@ -27,12 +27,12 @@ registered class wins. The finance app registers `ProviderError -> 5` (`Provider
 and the finance bundle extension; `regimekit.Project` is an alias of it (the 0.2.x API).
 
 ```python
-from regimekit import Project            # the finance facade
+from regimekit import Project  # the finance facade
 from regimekit.project import Project as CoreProject
 from regimekit.config.schema import ProjectConfig
 
 p = CoreProject.from_yaml("config.yaml", config_cls=ProjectConfig)
-data = p.load_data()                      # or load_data(obj=my_dataframe) for pandas / numpy / xarray sources
+data = p.load_data()  # or load_data(obj=my_dataframe) for pandas / numpy / xarray sources
 fit = p.fit(data)
 ```
 

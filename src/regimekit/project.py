@@ -262,7 +262,6 @@ class Project:
         self.out_dir = Path(out_dir) if out_dir is not None else Path(config.project.output_dir)
         self.offline = offline
         self.last_fetched: FetchedInputs | None = None
-        self._obj: Any = None
         self.last_data: PreparedDataset | None = None
         self.last_backtest_meta: dict[str, Any] | None = None
 
@@ -299,14 +298,15 @@ class Project:
 
     def _load_raw(self, obj: Any, offline: bool) -> FetchedInputs:  # noqa: ANN401
         """Read the observations and covariates of `data.source` (applications override this)."""
-        del offline  # the core sources read files or objects; a source that honours it is an extension
+        if offline:
+            get_logger("regimekit.data").debug("offline_ignored", source=self.config.data.source.kind)
         obs, covs = load_source_data(self.config.data, obj=obj)
         return FetchedInputs(obs, covs)
 
     def load_inputs(self, obj: Any = None, *, offline: bool | None = None) -> FetchedInputs:  # noqa: ANN401
         """The raw inputs of `data.source` (no preparation, no writes); `obj` for numpy/pandas/xarray."""
         offline = self.offline if offline is None else offline
-        self.last_fetched = self._load_raw(obj if obj is not None else self._obj, offline)
+        self.last_fetched = self._load_raw(obj, offline)
         return self.last_fetched
 
     def load_data(
@@ -349,6 +349,10 @@ class Project:
             "load_data_done", out=str(self.out_dir) if write else None, rows=int(dataset.times.shape[0])
         )
         return dataset
+
+    def needs_network(self) -> bool:
+        """Whether loading the data may need the network (then `--offline` forbids loading it again)."""
+        return False
 
     def _hooks(self, grid: PreparedDataset) -> list[OriginHook]:
         """The origin hooks a backtest runs by default (none in the core)."""

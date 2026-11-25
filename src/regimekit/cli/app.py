@@ -104,7 +104,7 @@ class CliContext:
         """Read `prepared.parquet` from the output directory, loading (and writing) the data when missing."""
         prepared_path = project.out_dir / "prepared.parquet"
         if not prepared_path.exists():
-            if project.offline and self.name != "regimekit-core":
+            if project.offline and project.needs_network():
                 raise DataError(f"no prepared dataset at {prepared_path} and --offline forbids fetching one")
             project.load_data(write=True)
         return read_prepared(prepared_path)

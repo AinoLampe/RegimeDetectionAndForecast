@@ -201,6 +201,10 @@ class FinanceProject(Project):
         log.info("fetch_done", out=str(out_dir) if write else None, rows=int(dataset.times.shape[0]))
         return dataset
 
+    def needs_network(self) -> bool:
+        """Provider sources fetch from the network (or the cache)."""
+        return self.config.data.source.kind == "provider"
+
     def _hooks(self, grid: PreparedDataset) -> list[OriginHook]:
         """The strategy of `evaluation.strategy` as a hook (none without a strategy)."""
         cfg_strategy = self.config.evaluation.strategy
