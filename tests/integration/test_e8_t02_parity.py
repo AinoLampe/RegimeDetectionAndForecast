@@ -21,13 +21,15 @@ from click.testing import Result
 from typer.testing import CliRunner
 
 from regimekit import Project
-from regimekit.cli import app as app_module
-from regimekit.cli.app import _selftest_lines, app
+from regimekit.cli.app import _selftest_lines
 from regimekit.config.yaml_io import load_config
 from regimekit.estimation import selftest as selftest_mod
 from regimekit.finance import FinanceConfig
+from regimekit.finance import cli as app_module
+from regimekit.finance.cli import app
+from regimekit.finance.errors import ProviderError
 from regimekit.persistence.store import ModelStore
-from regimekit.utils.errors import ConfigError, ProviderError
+from regimekit.utils.errors import ConfigError
 from tests.integration.test_e7_t04_cli import _project
 
 _runner = CliRunner()

@@ -15,7 +15,7 @@ from typer.testing import CliRunner
 
 pytest.importorskip("yfinance")
 
-from regimekit.cli.app import app
+from regimekit.finance.cli import app
 
 pytestmark = pytest.mark.live
 

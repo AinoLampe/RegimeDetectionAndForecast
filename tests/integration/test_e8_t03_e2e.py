@@ -13,9 +13,9 @@ from click.testing import Result
 from typer.testing import CliRunner
 
 from examples.synthetic import write_offline_project
-from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
 from regimekit.finance import FinanceConfig
+from regimekit.finance.cli import app
 from regimekit.persistence.store import FILES
 
 _runner = CliRunner()

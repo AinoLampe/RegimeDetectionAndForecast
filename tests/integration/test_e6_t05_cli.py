@@ -15,10 +15,10 @@ import pytest
 from click.testing import Result
 from typer.testing import CliRunner
 
-from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
 from regimekit.engine.expanded_hmm import ExpandedHMMEngine
 from regimekit.finance import FinanceConfig
+from regimekit.finance.cli import app
 from regimekit.inference.covariate_forecasters import make_forecaster
 from regimekit.inference.forecast import MonteCarloForecaster
 from regimekit.inference.results import ForecastResult

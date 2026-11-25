@@ -9,11 +9,12 @@ import pandas as pd
 import pytest
 
 from regimekit.finance.config import FinanceDataSection
+from regimekit.finance.errors import ProviderError
 from regimekit.finance.providers.csv import CsvProvider
 from regimekit.finance.providers.source import FetchContext
 from regimekit.plugins import REGISTRY
 from regimekit.testing.source_contract import FIXTURES, SourceCase, check_source
-from regimekit.utils.errors import ConfigError, ProviderError
+from regimekit.utils.errors import ConfigError
 
 pytestmark = pytest.mark.finance
 

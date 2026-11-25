@@ -12,8 +12,8 @@ import pytest
 from click.testing import Result
 from typer.testing import CliRunner
 
-from regimekit.cli.app import app
 from regimekit.evaluation.report import SECTIONS
+from regimekit.finance.cli import app
 from regimekit.persistence.results import read_backtest
 from tests.integration.test_e2_t08_fetch import _write_csv_project
 

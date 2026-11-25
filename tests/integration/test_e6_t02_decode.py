@@ -12,10 +12,10 @@ import pytest
 from click.testing import Result
 from typer.testing import CliRunner
 
-from regimekit.cli.app import app
 from regimekit.config.yaml_io import load_config
 from regimekit.estimation.results import FitResult
 from regimekit.finance import FinanceConfig
+from regimekit.finance.cli import app
 from regimekit.inference.decode import decode
 from regimekit.model.build import build_model_spec
 from regimekit.model.params.manager import ParamManager

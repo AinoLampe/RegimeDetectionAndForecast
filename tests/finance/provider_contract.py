@@ -10,8 +10,8 @@ import numpy as np
 import pytest
 
 from regimekit.data.contracts import CovariateSeries, ObservationSet
+from regimekit.finance.errors import ProviderError
 from regimekit.finance.providers.base import DataProvider
-from regimekit.utils.errors import ProviderError
 
 
 def _check_times(times: np.ndarray) -> None:

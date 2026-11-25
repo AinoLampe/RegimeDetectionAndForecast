@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from regimekit.data.contracts import CovariateSeries, ObservationSet
+from regimekit.finance.errors import ProviderError
 from regimekit.finance.providers.base import (
     check_interval,
     clean_frame,
@@ -30,7 +31,6 @@ from regimekit.finance.providers.base import (
     window_bounds,
     with_retries,
 )
-from regimekit.utils.errors import ProviderError
 from regimekit.utils.logging import get_logger
 
 Downloader = Callable[[list[str], str, str | None, str, bool], pd.DataFrame]

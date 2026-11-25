@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from regimekit.data.contracts import CovariateSeries, ObservationSet
+from regimekit.finance.errors import ProviderError
 from regimekit.finance.providers.base import (
     check_interval,
     clean_frame,
@@ -16,7 +17,6 @@ from regimekit.finance.providers.base import (
     register,
     to_utc_ns,
 )
-from regimekit.utils.errors import ProviderError
 
 
 def _read(path: Path, required: tuple[str, ...], what: str) -> pd.DataFrame:
