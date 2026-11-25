@@ -164,6 +164,14 @@ class FinanceEmissionCfg(EmissionCfg):
 
     params: dict[str, FinanceParamCfg]  # type: ignore[assignment]
 
+    @field_validator("family", mode="before")
+    @classmethod
+    def _register_finance_emissions(cls, value: object) -> object:
+        """Registers the finance families (`gbm`) before the family name is checked against the registry."""
+        import regimekit.finance.emission  # noqa: F401
+
+        return value
+
 
 class FinanceDurationCfg(DurationCfg):
     """`model.duration:` with finance parameter configs."""
