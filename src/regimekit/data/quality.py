@@ -8,7 +8,7 @@ Run on the raw observations of a source, before the master grid is built:
 - the staleness histogram of the covariates (from the preparer's `PrepDiagnostics`).
 
 An application adds its own checks on top (the finance application: weekday gaps, non-positive values,
-adjustment discontinuities, see `regimekit.finance.quality`).
+adjustment discontinuities).
 """
 
 from __future__ import annotations
