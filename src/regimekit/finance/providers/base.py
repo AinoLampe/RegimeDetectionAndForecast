@@ -17,7 +17,7 @@ import numpy as np
 import pandas as pd
 
 from regimekit.data.contracts import CovariateSeries, ObservationSet
-from regimekit.utils.errors import ProviderError
+from regimekit.finance.errors import ProviderError
 
 VALID_INTERVALS: tuple[str, ...] = ("1h", "1d", "1wk", "1mo")
 
