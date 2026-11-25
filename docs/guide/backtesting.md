@@ -54,7 +54,7 @@ For every fold:
    come from the fold's train window only, `[train_start, train_end)` (`PrepStats.train_window` records it); a covariate with `lag: 1`
    reaches step `t` only through prints stamped at or before `tau_{t-1}`.
 2. `fit` (E5-T03) on `window(train_start, train_end)`. The previous fold's optimum is added as one extra
-   restart (`init_strategy == "warm_start"`) next to the `estimation.restarts` regular ones.
+   restart (`init_method == "warm_start"`) next to the `estimation.restarts` regular ones.
 3. One forward pass over `window(0, test_end)` gives the filtered state at every origin. The filter is
    causal, so row `o` is exactly the filter of `window(0, o + 1)`; the Monte-Carlo forecast of horizon
    `max(horizons)` starts from it with the seed `derive_seed(seed, PURPOSE_BACKTEST_FORECAST, fold, o)`
@@ -78,7 +78,7 @@ Every distinct window length `T` is a new compilation of the jitted engine funct
 are therefore padded at the end to the next multiple of 256 rows (`evaluation.padding.pad_dataset`): the
 extra rows have `mask=False`, `observations=0`, the last `dt` and zero covariates, so they add no
 log-density and leave the filter rows `0..T-1` untouched. Folds that pad to the same length share one
-compilation of the objective and of the engine. The data-driven initializations (`rollvol_kmeans`, `random`)
+compilation of the objective and of the engine. The data-driven initializations (`rolling_kmeans`, `random`)
 read only the observed rows (`estimation.init.observed_rows`), so padding cannot bias the starting values.
 
 The posterior metrics are the exception to padding: they decode the *unpadded* train window, because the

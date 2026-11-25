@@ -312,6 +312,10 @@ def migrate_1_to_2(raw: dict[str, Any]) -> dict[str, Any]:
     if "backtest" in evaluation:
         evaluation["backtest"] = backtest
         cfg["evaluation"] = evaluation
+    estimation = cfg.get("estimation")
+    if estimation is not None and "rollvol_kmeans" in estimation.get("init", []):
+        names = ["rolling_kmeans" if n == "rollvol_kmeans" else n for n in estimation["init"]]
+        cfg["estimation"] = {**estimation, "init": names}
     emission = cfg.get("model", {}).get("emission")
     if emission is not None and emission.get("family") == "student_t" and "scale_by_dt" not in emission:
         cfg["model"] = {**cfg["model"], "emission": {**emission, "scale_by_dt": True}}
