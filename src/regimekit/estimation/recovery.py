@@ -44,7 +44,7 @@ from regimekit.model.transition import JumpTransition, build_memory_layout
 from regimekit.plugins import REGISTRY
 from regimekit.statespace.builders import build_expanded, build_explicit
 from regimekit.statespace.index import StateSpace
-from regimekit.utils.clock import get_clock, parse_clock_options
+from regimekit.utils.clock import get_clock
 from regimekit.utils.rng import key_for
 
 if TYPE_CHECKING:
@@ -73,8 +73,9 @@ def recovery_clock() -> str:
 
 def nominal_dt() -> float:
     """The daily step of the recovery scenarios, taken from `recovery_clock()` (E10-T03)."""
-    name = recovery_clock()
-    return float(get_clock(name).dt(None, 1, parse_clock_options(name, None))[0])
+    days = get_clock(recovery_clock()).days_per_year
+    assert days is not None  # `recovery_clock` only picks year clocks with a day count
+    return 1.0 / float(days)
 
 
 N_STATES = 3

@@ -12,6 +12,8 @@ from regimekit.utils.errors import (
     RegimekitError,
 )
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 
 @pytest.mark.parametrize(
     "cls", [RegimekitError, ConfigError, DataError, ProviderError, NumericalError, PersistenceError]

@@ -32,6 +32,8 @@ from regimekit.persistence.store import ModelStore
 from regimekit.utils.errors import ConfigError
 from tests.integration.test_e7_t04_cli import _project
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 _runner = CliRunner()
 SEED = 7
 GLOBALS = ["--seed", str(SEED), "--device", "cpu", "--log-level", "WARNING"]
@@ -297,7 +299,7 @@ def test_e8_t02_importing_project_needs_no_network_and_writes_no_files(tmp_path:
         "socket.getaddrinfo = _blocked\n"
         "socket.create_connection = _blocked\n"
         "from regimekit import Project\n"
-        "assert Project.__name__ == 'Project'\n"
+        "assert Project.__name__ == 'FinanceProject'\n"
     )
     done = subprocess.run(
         [sys.executable, "-c", code], cwd=tmp_path, capture_output=True, text=True, check=False

@@ -33,6 +33,8 @@ from regimekit.utils.errors import ConfigError, PersistenceError
 from tests.integration.test_e2_t08_fetch import _fetch, _write_csv_project
 from tests.integration.test_e6_t02_decode import _write_model
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 _runner = CliRunner()
 
 

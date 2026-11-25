@@ -17,6 +17,8 @@ from regimekit.utils.errors import ConfigError
 from regimekit.utils.rng import FORECAST_ORIGIN, FORECAST_PATHS, PURPOSE_FORECAST, key_for
 from tests.helpers.objective_fixtures import Case, make_case
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 DT = 1.0 / TRADING_DAYS_PER_YEAR
 FRIDAY = np.datetime64("2024-03-29T00:00:00", "ns")
 

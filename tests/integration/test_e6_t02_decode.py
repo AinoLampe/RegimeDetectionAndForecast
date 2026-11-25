@@ -23,6 +23,8 @@ from regimekit.persistence.results import read_prepared
 from regimekit.persistence.store import ModelStore
 from tests.integration.test_e2_t08_fetch import _fetch, _write_csv_project
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 _runner = CliRunner()
 
 

@@ -85,7 +85,7 @@ def test_e6_t01_non_finite_returns_raise_numerical_error() -> None:
     theta = dict(case.manager.unflatten(case.u0))
     theta["emission.scale"] = jnp.asarray(theta["emission.scale"]) * jnp.inf
 
-    with pytest.raises(NumericalError, match="returns"):
+    with pytest.raises(NumericalError, match="values"):
         simulate_paths(key_for(0, 1), theta, case.spec, case.space, case.data.dt, None, None, None, n_paths=2)
 
 

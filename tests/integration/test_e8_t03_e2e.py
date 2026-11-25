@@ -18,6 +18,8 @@ from regimekit.finance import FinanceConfig
 from regimekit.finance.cli import app
 from regimekit.persistence.store import FILES
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 _runner = CliRunner()
 EXAMPLES = Path(__file__).resolve().parents[2] / "examples" / "configs"
 DAX = EXAMPLES / "dax_3state_gbm_nb.yaml"

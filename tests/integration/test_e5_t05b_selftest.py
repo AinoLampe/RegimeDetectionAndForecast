@@ -18,6 +18,8 @@ from regimekit.estimation import selftest as selftest_mod
 from regimekit.estimation.recovery import RecoveryReport, run_scenario
 from regimekit.finance.cli import app
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 _runner = CliRunner()
 
 

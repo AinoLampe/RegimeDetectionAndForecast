@@ -17,6 +17,8 @@ from regimekit.finance.cli import app
 from regimekit.persistence.results import read_backtest
 from tests.integration.test_e2_t08_fetch import _write_csv_project
 
+pytestmark = pytest.mark.finance  # needs the finance package (core variants: hsmmkit tickets)
+
 _runner = CliRunner()
 
 METRICS = ["log_score", "crps", "pit_coverage", "bic", "icl", "regime_occupancy", "sharpe", "max_drawdown"]
